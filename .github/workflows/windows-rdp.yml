@@ -2,7 +2,7 @@ name: Windows RDP Session
 
 on:
   schedule:
-    - cron: '0 */5 * * *'
+    - cron: '0 */5 * * *' # تشغيل تلقائي كل 5 ساعات
   workflow_dispatch:
 
 jobs:
@@ -14,31 +14,36 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # تثبيت أداة Ngrok عبر مدير الحزم Chocolatey المدمج في Windows
+      # 1. تعيين كلمة المرور لحساب runneradmin
+      - name: Set RDP Password
+        run: |
+          net user runneradmin MyPassword123!
+
+      # 2. تثبيت أداة Ngrok
       - name: Install Ngrok
         run: |
           choco install ngrok -y
 
-      # ربط مفتاح الحساب
+      # 3. ربط مفتاح الحساب
       - name: Authenticate Ngrok
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
           ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
 
-      # تفعيل الاتصال بسطح المكتب البعيد
+      # 4. تفعيل الاتصال بسطح المكتب البعيد
       - name: Enable Remote Desktop
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-      # فتح النفق للمنفذ 3389
+      # 5. فتح النفق للمنفذ 3389
       - name: Create Ngrok Tunnel
         run: |
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
 
-      # الحلقة الزمنية لإبقاء الخادم يعمل
+      # 6. الحلقة الزمنية لإبقاء الخادم يعمل
       - name: Keep Alive Loop
         run: |
           $i = 0
