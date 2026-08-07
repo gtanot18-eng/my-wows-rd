@@ -2,7 +2,7 @@ name: Windows RDP Session
 
 on:
   schedule:
-    - cron: '0 */5 * * *' # تشغيل تلقائي كل 5 ساعات
+    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 jobs:
@@ -14,10 +14,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تعيين كلمة المرور لحساب runneradmin
-      - name: Set RDP Password
+      # 1. إنشاء مستخدم جديد مخصص مع منح صلاحيات الأدمن و RDP
+      - name: Create Dedicated RDP User
         run: |
-          net user runneradmin MyPassword123!
+          net user rdpuser Password1234! /add
+          net localgroup Administrators rdpuser /add
+          net localgroup "Remote Desktop Users" rdpuser /add
 
       # 2. تثبيت أداة Ngrok
       - name: Install Ngrok
@@ -31,12 +33,12 @@ jobs:
         run: |
           ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
 
-      # 4. تفعيل الاتصال بسطح المكتب البعيد
-      - name: Enable Remote Desktop
+      # 4. تفعيل RDP وتعطيل NLA لتفادي رفض كلمة المرور
+      - name: Enable Remote Desktop & Disable NLA
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
 
       # 5. فتح النفق للمنفذ 3389
       - name: Create Ngrok Tunnel
