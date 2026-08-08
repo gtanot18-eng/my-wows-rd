@@ -1,9 +1,7 @@
 name: Windows RDP Session
 
 on:
-  schedule:
-    - cron: '0 */5 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # تم إلغاء جدول الـ cron لتفادي حظر الحساب وإتاحة التشغيل اليدوي فقط
 
 jobs:
   rdp-session:
@@ -14,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. إنشاء مستخدم جديد مخصص مع منح صلاحيات الأدمن و RDP
+      # 1. إنشاء مستخدم مخصص وإعطاؤه الصلاحيات الكاملة
       - name: Create Dedicated RDP User
         run: |
           net user rdpuser Password1234! /add
@@ -33,17 +31,29 @@ jobs:
         run: |
           ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
 
-      # 4. تفعيل RDP وتعطيل NLA لتفادي رفض كلمة المرور
+      # 4. تفعيل RDP وتعطيل NLA
       - name: Enable Remote Desktop & Disable NLA
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
 
-      # 5. فتح النفق للمنفذ 3389
-      - name: Create Ngrok Tunnel
+      # 5. تشغيل نفق Ngrok واستخراج بيانات الاتصال للـ Logs
+      - name: Start Ngrok & Display Address
         run: |
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
+          Start-Sleep -Seconds 5
+          $TunnelInfo = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+          $PublicUrl = $TunnelInfo.tunnels[0].public_url
+          
+          # استخراج وتنسيق رابط الاتصال للطباعة في الـ Logs
+          Write-Host "==================================================" -ForegroundColor Green
+          Write-Host " [!] بيانات الاتصال عبر RDP" -ForegroundColor Cyan
+          Write-Host " IP / Address : $PublicUrl" -ForegroundColor Yellow
+          Write-Host " Username     : rdpuser" -ForegroundColor Yellow
+          Write-Host " Password     : Password1234!" -ForegroundColor Yellow
+          Write-Host "==================================================" -ForegroundColor Green
+          Write-Host "ملاحظة: يمكنك نسخ العنوان أعلاه لاستخدامه في برنامج Remote Desktop Connection" -ForegroundColor Gray
 
       # 6. الحلقة الزمنية لإبقاء الخادم يعمل
       - name: Keep Alive Loop
