@@ -24,36 +24,36 @@ jobs:
         run: |
           choco install ngrok -y
 
-      # 3. إدخال التوكن الخاص بـ Ngrok
+      # 3. إدخال التوكن الخاص بـ Ngrok (تم تصحيح استدعاء الأمر)
       - name: Authenticate Ngrok
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
-          .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
+          ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
 
-      # 4. إصلاح جذر المشكلة: إعدادات الأمان والجدار الناري للـ RDP
+      # 4. إعدادات الأمان والجدار الناري للـ RDP وإصلاح تعليق Securing Connection
       - name: Fix RDP Security & Firewall
         run: |
           # تفعيل الاتصالات البعيدة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           
-          # تعطيل NLA وإجبار استخدام Standard RDP Security (حل مشكلة Securing Connection)
+          # تعطيل NLA وإجبار استخدام Standard RDP Security
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0
           
-          # إيقاف UDP للـ RDP ليعمل عبر TCP النقي فقط مع Ngrok
+          # إيقاف UDP للـ RDP ليعمل عبر TCP فقط مع Ngrok
           New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "fClientDisableUDP" -PropertyType DWORD -Value 1 -Force
 
           # فتح جميع قواعد الجدار الناري الخاصة بـ RDP
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           
-          # تحسين الأداء الإضافي
+          # تحسين الأداء
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-      # 5. تشغيل Ngrok وجلب رابط الاتصال
+      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم تصحيح استدعاء الأمر)
       - name: Start Ngrok & Display Address
         run: |
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+          Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
           
           $maxRetries = 10
           $retryCount = 0
@@ -90,7 +90,7 @@ jobs:
               exit 1
           }
 
-      # 6. حلقة الإبقاء يعمل مع الفحص
+      # 6. حلقة الإبقاء يعمل
       - name: Keep Alive Loop
         run: |
           $i = 0
@@ -98,6 +98,6 @@ jobs:
               Start-Sleep -Seconds 60
               $i++
               if (-not (Get-Process -Name "ngrok" -ErrorAction SilentlyContinue)) {
-                  Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+                  Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
               }
           }
