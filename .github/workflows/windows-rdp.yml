@@ -19,11 +19,10 @@ jobs:
           net localgroup Administrators rdpuser /add
           net localgroup "Remote Desktop Users" rdpuser /add
 
-      # 2. تحميل وتجهيز Ngrok مباشرة
-      - name: Download & Setup Ngrok
+      # 2. تثبيت Ngrok عبر Chocolatey
+      - name: Install Ngrok
         run: |
-          Invoke-WebRequest -Uri "https://bin.equinox.io/c/b4PvuBzDrive/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
-          Expand-Archive -Path "ngrok.zip" -DestinationPath "."
+          choco install ngrok -y
 
       # 3. إدخال التوكن الخاص بـ Ngrok
       - name: Authenticate Ngrok
