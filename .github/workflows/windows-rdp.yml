@@ -50,7 +50,7 @@ jobs:
           # تحسين الأداء
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم إصلاح خطأ التنسيق)
+      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم حل خطأ السلسلة النصية)
       - name: Start Ngrok & Display Address
         run: |
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
@@ -70,11 +70,13 @@ jobs:
           }
 
           if ($PublicUrl) {
-              # كتابة الملخص في GITHUB_STEP_SUMMARY بدون استخدام Here-String
-              "### 🖥️ RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "- **Address:** `$PublicUrl`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "- **Username:** `rdpuser`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "- **Password:** `Password1234!`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              # كتابة بيانات الاتصال في Summary بأسلوب متوافق تماماً مع PowerShell
+              $Line1 = "### 🖥️ RDP Connection Info"
+              $Line2 = "* **Address:** $PublicUrl"
+              $Line3 = "* **Username:** rdpuser"
+              $Line4 = "* **Password:** Password1234!"
+              
+              Set-Content -Path $env:GITHUB_STEP_SUMMARY -Value @($Line1, $Line2, $Line3, $Line4)
 
               Write-Host "==================================================" -ForegroundColor Green
               Write-Host " [!] انسخ العنوان التالي مباشرة لبرنامج RDP:" -ForegroundColor Cyan
