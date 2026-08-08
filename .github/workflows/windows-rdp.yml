@@ -24,7 +24,7 @@ jobs:
         run: |
           choco install ngrok -y
 
-      # 3. إدخال التوكن الخاص بـ Ngrok (تم تصحيح استدعاء الأمر)
+      # 3. إدخال التوكن الخاص بـ Ngrok
       - name: Authenticate Ngrok
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
@@ -50,7 +50,7 @@ jobs:
           # تحسين الأداء
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم تصحيح استدعاء الأمر)
+      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم إصلاح خطأ التنسيق)
       - name: Start Ngrok & Display Address
         run: |
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
@@ -63,7 +63,6 @@ jobs:
               Start-Sleep -Seconds 3
               try {
                   $TunnelInfo = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
-                  # إزالة البادئة tcp:// تلقائياً للطباعة المباشرة
                   $PublicUrl = $TunnelInfo.tunnels[0].public_url -replace "tcp://", ""
               } catch {
                   $retryCount++
@@ -71,13 +70,11 @@ jobs:
           }
 
           if ($PublicUrl) {
-              $SummaryContent = @"
-              ### 🖥️ RDP Connection Info
-              - **Address:** `$PublicUrl`
-              - **Username:** `rdpuser`
-              - **Password:** `Password1234!`
-              "@
-              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -InputObject $SummaryContent -Encoding utf8
+              # كتابة الملخص في GITHUB_STEP_SUMMARY بدون استخدام Here-String
+              "### 🖥️ RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "- **Address:** `$PublicUrl`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "- **Username:** `rdpuser`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "- **Password:** `Password1234!`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
               Write-Host "==================================================" -ForegroundColor Green
               Write-Host " [!] انسخ العنوان التالي مباشرة لبرنامج RDP:" -ForegroundColor Cyan
