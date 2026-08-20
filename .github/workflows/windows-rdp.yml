@@ -1,4 +1,4 @@
-name: Packetriot Continuous 60FPS RDP
+name: Cloudflare Ultra-Low-Latency RDP 2026
 
 on:
   workflow_dispatch:
@@ -34,94 +34,54 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP المباشر عبر محرك Telebit المفتوح (بدون قيود زمنية)
-      - name: Launch Continuous TCP Engine
-        shell: bash
+      # 2. تشغيل نفق Cloudflare TCP المباشر بدون قيود زمنية
+      - name: Launch Cloudflare TCP Engine
+        shell: powershell
         run: |
-          python -u - << 'EOF'
-          import subprocess
-          import time
-          import re
-          import os
-          import sys
+          # تحميل أداة Cloudflared الرسمية لويندوز
+          curl.exe -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
 
-          print("[*] Downloading & Launching Dedicated Tunnel Engine...")
+          # تشغيل النفق وتوجيه مخرجاته لملف السجل
+          $proc = Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel","--url","tcp://localhost:3389" -RedirectStandardError "cf.log" -PassThru
 
-          # استخدام عميل Telebit الرسمي لنفق TCP مستمر بدون مهلة 60 دقيقة
-          cmd = "curl -s https://get.telebit.io | bash && ~/telebit tcp 3389"
-          
-          # تشغيل أمر النفق كعملية مستقلة
-          proc = subprocess.Popen(
-              ["powershell", "-Command", "Invoke-WebRequest -Uri https://get.telebit.io/windows -OutFile tb.exe; .\\tb.exe tcp 3389"],
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1
-          )
-
-          rdp_address = None
-          start_time = time.time()
-
-          while time.time() - start_time < 45:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              clean_line = line.strip()
-              print(f"[Engine] {clean_line}")
-
-              # التقاط الرابط المباشر
-              match = re.search(r"((?:[a-zA-Z0-9\-]+\.)+telebit\.io:[0-9]+)", clean_line)
-              if match:
-                  rdp_address = match.group(1)
-                  break
-
-          # كخيار احتياطي فوري إذا تأخر Telebit: استخدام نفق TCP الخام عبر Loophole
-          if not rdp_address:
-              print("[*] Falling back to Loophole Low-Latency TCP Relay...")
-              lh_proc = subprocess.Popen(
-                  ["powershell", "-Command", "Invoke-WebRequest -Uri https://github.com/loophole/cli/releases/download/1.0.0-beta.15/loophole-windows-amd64.zip -OutFile lh.zip; Expand-Archive lh.zip -DestinationPath .; .\\loophole.exe tcp 3389 --hostname random"],
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-                  text=True,
-                  bufsize=1
-              )
-              lh_start = time.time()
-              while time.time() - lh_start < 30:
-                  line = lh_proc.stdout.readline()
-                  if not line:
-                      continue
-                  clean_line = line.strip()
-                  print(f"[Loophole] {clean_line}")
-                  match = re.search(r"((?:[a-zA-Z0-9\-]+\.)+loophole\.site:[0-9]+)", clean_line)
-                  if match:
-                      rdp_address = match.group(1)
-                      proc = lh_proc
+          $rdpAddress = $null
+          for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Seconds 2
+              if (Test-Path "cf.log") {
+                  $content = Get-Content "cf.log" -Raw
+                  if ($content -match "https://([a-zA-Z0-9\-]+\.trycloudflare\.com)") {
+                      $rdpAddress = $matches[1]
                       break
+                  }
+              }
+          }
 
-          if rdp_address:
-              print("\n" + "=" * 60)
-              print("[+] UNLIMITED STABLE RDP SESSION IS READY")
-              print(f" Address  : {rdp_address}")
-              print(" Username : TitanAdmin")
-              print(" Password : Matrix#2026!")
-              print(" Time     : 350 Minutes (Continuous - No 60m Limit)")
-              print("=" * 60 + "\n")
+          if ($rdpAddress) {
+              Write-Host "==========================================================" -ForegroundColor Green
+              Write-Host "[+] CLOUDFLARE RDP ENGINE ACTIVE & CONNECTED" -ForegroundColor Cyan
+              Write-Host " Hostname : $rdpAddress" -ForegroundColor Yellow
+              Write-Host " Username : TitanAdmin" -ForegroundColor Yellow
+              Write-Host " Password : Matrix#2026!" -ForegroundColor Yellow
+              Write-Host " Limit    : Unlimited (Full 350 Minutes Session)" -ForegroundColor Green
+              Write-Host "==========================================================" -ForegroundColor Green
 
-              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-              if summary_file:
-                  with open(summary_file, "w", encoding="utf-8") as f:
-                      f.write("### ⚡ Continuous High-Speed RDP (Unlimited Session)\n\n")
-                      f.write(f"* **Address:** `{rdp_address}`\n")
-                      f.write("* **Username:** `TitanAdmin`\n")
-                      f.write("* **Password:** `Matrix#2026!`\n")
-                      f.write("* **Limit:** None (Active for the full 6 hours)\n")
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ⚡ Cloudflare Ultra-Fast RDP (No 60m Limit)"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Host:** `$rdpAddress`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `TitanAdmin`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `Matrix#2026!`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Access Mode:** High-Speed Anycast Cloudflare Network"
+          } else {
+              Write-Host "[!] Failed to launch Cloudflared. Log Output:" -ForegroundColor Red
+              if (Test-Path "cf.log") { Get-Content "cf.log" }
+              exit 1
+          }
 
-              # حلقة الحفاظ على استمرار السيرفر حتى نهاية الوقت
-              minutes = 0
-              while minutes < 340 and proc.poll() is None:
-                  time.sleep(60)
-                  minutes += 1
-          else:
-              print("[!] Failed to establish direct continuous tunnel.")
-              sys.exit(1)
-          EOF
+      # 3. الحفاظ على استمرار الجلسة حتى نهاية الوقت
+      - name: Keep Alive Loop
+        shell: powershell
+        run: |
+          $minutes = 0
+          while ($minutes -lt 340) {
+              Start-Sleep -Seconds 60
+              $minutes++
+          }
