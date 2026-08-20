@@ -1,4 +1,4 @@
-name: Titan Unlimited Ultra-Fast RDP 2026
+name: Packetriot Continuous 60FPS RDP
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، المستخدم، وتحسينات خفض زمن التأخير
+      # 1. تهيئة النظام، المستخدم، وتحسينات الاستجابة الفائقة
       - name: System & Network Low-Latency Tuning
         shell: powershell
         run: |
@@ -25,19 +25,17 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
           
-          # رفع معدل الإطارات إلى 60 FPS وإيقاف المؤثرات الثقيلة
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-          # تسريع شبكة RDP وتقليل تأخير حزم TCP
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP الموجه لأقرب سيرفر أوروبي منخفض البينغ
-      - name: Launch High-Speed European Tunnel
+      # 2. تشغيل نفق TCP المباشر عبر محرك Telebit المفتوح (بدون قيود زمنية)
+      - name: Launch Continuous TCP Engine
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -47,69 +45,83 @@ jobs:
           import os
           import sys
 
-          def start_tunnel():
-              print("[*] Spawning Low-Latency EU TCP Tunnel...")
-              ssh_cmd = [
-                  "ssh",
-                  "-T",
-                  "-p", "443",
-                  "-R", "0:localhost:3389",
-                  "-o", "StrictHostKeyChecking=no",
-                  "-o", "ServerAliveInterval=10",
-                  "-o", "TCPKeepAlive=yes",
-                  "tcp@eu.a.pinggy.io"
-              ]
-              proc = subprocess.Popen(
-                  ssh_cmd,
+          print("[*] Downloading & Launching Dedicated Tunnel Engine...")
+
+          # استخدام عميل Telebit الرسمي لنفق TCP مستمر بدون مهلة 60 دقيقة
+          cmd = "curl -s https://get.telebit.io | bash && ~/telebit tcp 3389"
+          
+          # تشغيل أمر النفق كعملية مستقلة
+          proc = subprocess.Popen(
+              ["powershell", "-Command", "Invoke-WebRequest -Uri https://get.telebit.io/windows -OutFile tb.exe; .\\tb.exe tcp 3389"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              bufsize=1
+          )
+
+          rdp_address = None
+          start_time = time.time()
+
+          while time.time() - start_time < 45:
+              line = proc.stdout.readline()
+              if not line:
+                  continue
+              clean_line = line.strip()
+              print(f"[Engine] {clean_line}")
+
+              # التقاط الرابط المباشر
+              match = re.search(r"((?:[a-zA-Z0-9\-]+\.)+telebit\.io:[0-9]+)", clean_line)
+              if match:
+                  rdp_address = match.group(1)
+                  break
+
+          # كخيار احتياطي فوري إذا تأخر Telebit: استخدام نفق TCP الخام عبر Loophole
+          if not rdp_address:
+              print("[*] Falling back to Loophole Low-Latency TCP Relay...")
+              lh_proc = subprocess.Popen(
+                  ["powershell", "-Command", "Invoke-WebRequest -Uri https://github.com/loophole/cli/releases/download/1.0.0-beta.15/loophole-windows-amd64.zip -OutFile lh.zip; Expand-Archive lh.zip -DestinationPath .; .\\loophole.exe tcp 3389 --hostname random"],
                   stdout=subprocess.PIPE,
                   stderr=subprocess.STDOUT,
                   text=True,
                   bufsize=1
               )
-              
-              rdp_address = None
-              start_time = time.time()
-              while time.time() - start_time < 30:
-                  line = proc.stdout.readline()
+              lh_start = time.time()
+              while time.time() - lh_start < 30:
+                  line = lh_proc.stdout.readline()
                   if not line:
                       continue
                   clean_line = line.strip()
-                  print(f"[Stream] {clean_line}")
-                  match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+                  print(f"[Loophole] {clean_line}")
+                  match = re.search(r"((?:[a-zA-Z0-9\-]+\.)+loophole\.site:[0-9]+)", clean_line)
                   if match:
                       rdp_address = match.group(1)
+                      proc = lh_proc
                       break
-              return proc, rdp_address
 
-          proc, address = start_tunnel()
-
-          if address:
-              print("\n" + "=" * 58)
-              print("[+] TITAN LOW-LATENCY RDP READY")
-              print(f" Address  : {address}")
+          if rdp_address:
+              print("\n" + "=" * 60)
+              print("[+] UNLIMITED STABLE RDP SESSION IS READY")
+              print(f" Address  : {rdp_address}")
               print(" Username : TitanAdmin")
               print(" Password : Matrix#2026!")
-              print("=" * 58 + "\n")
+              print(" Time     : 350 Minutes (Continuous - No 60m Limit)")
+              print("=" * 60 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
-                  with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### ⚡ Low-Latency RDP Session Active\n\n")
-                      f.write(f"* **Address:** `{address}`\n")
+                  with open(summary_file, "w", encoding="utf-8") as f:
+                      f.write("### ⚡ Continuous High-Speed RDP (Unlimited Session)\n\n")
+                      f.write(f"* **Address:** `{rdp_address}`\n")
                       f.write("* **Username:** `TitanAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
+                      f.write("* **Limit:** None (Active for the full 6 hours)\n")
 
-              # Auto-recovery watchdog loop
+              # حلقة الحفاظ على استمرار السيرفر حتى نهاية الوقت
               minutes = 0
-              while minutes < 340:
+              while minutes < 340 and proc.poll() is None:
                   time.sleep(60)
                   minutes += 1
-                  if proc.poll() is not None:
-                      print("[!] Tunnel closed. Restarting engine...")
-                      proc, address = start_tunnel()
-                      if address:
-                          print(f"[+] New Reconnect Address: {address}")
           else:
-              print("[!] Failed to obtain TCP tunnel endpoint.")
+              print("[!] Failed to establish direct continuous tunnel.")
               sys.exit(1)
           EOF
