@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، المستخدم، وتوافق Windows 7
+      # 1. تهيئة المستخدم وتوافق Windows 7 و 60 FPS
       - name: System & Windows 7 Kernel Optimization
         shell: powershell
         run: |
@@ -31,7 +31,7 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل محرك الأنفاق الذكي بنواة Python
+      # 2. تشغيل نفق SSH بنواة Python بعد تصحيح المعاملات
       - name: Launch Quantum Tunnel Core
         shell: bash
         run: |
@@ -42,18 +42,17 @@ jobs:
           import os
           import sys
 
-          print("[*] Starting Quantum Tunneling Engine...")
+          print("[*] Launching Quantum TCP Tunnel...")
 
-          # Launch unbuffered SSH TCP reverse tunnel
           ssh_cmd = [
               "ssh",
+              "-T",
               "-p", "443",
               "-R", "0:localhost:3389",
               "-o", "StrictHostKeyChecking=no",
               "-o", "ServerAliveInterval=15",
               "-o", "TCPKeepAlive=yes",
-              "a.pinggy.io",
-              "b"
+              "a.pinggy.io"
           ]
 
           proc = subprocess.Popen(
@@ -67,14 +66,13 @@ jobs:
           rdp_address = None
           start_time = time.time()
 
-          # Scan stream for active TCP endpoint
           while time.time() - start_time < 35:
               line = proc.stdout.readline()
               if not line:
                   continue
               
               clean_line = line.strip()
-              print(f"[Core Stream] {clean_line}")
+              print(f"[Stream] {clean_line}")
               
               match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
               if match:
@@ -83,7 +81,7 @@ jobs:
 
           if rdp_address:
               print("\n" + "=" * 58)
-              print(" [✓] QUANTUM RDP ACTIVE & CONNECTED")
+              print(" [✓] RDP ENGINE ACTIVE & READY")
               print(f" Address  : {rdp_address}")
               print(" Username : QuantumAdmin")
               print(" Password : Matrix#2026!")
@@ -92,20 +90,17 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("## ⚡ Quantum RDP Session (60 FPS)\n\n")
-                      f.write("| Attribute | Value |\n")
-                      f.write("| :--- | :--- |\n")
-                      f.write(f"| **Computer / Address** | `{rdp_address}` |\n")
-                      f.write("| **Username** | `QuantumAdmin` |\n")
-                      f.write("| **Password** | `Matrix#2026!` |\n")
-                      f.write("| **Client Mode** | Native Windows 7 / 10 / 11 |\n")
+                      f.write("### 🖥️ Quantum RDP Session Ready (60 FPS)\n\n")
+                      f.write(f"* **Computer / Address:** `{rdp_address}`\n")
+                      f.write("* **Username:** `QuantumAdmin`\n")
+                      f.write("* **Password:** `Matrix#2026!`\n")
 
-              # Heartbeat monitor loop
+              # الحفاظ على تشغيل الجلسة
               minutes = 0
               while proc.poll() is None and minutes < 340:
                   time.sleep(60)
                   minutes += 1
           else:
-              print("[!] Failed to obtain TCP tunnel endpoint.")
+              print("[!] Failed to parse TCP tunnel address.")
               sys.exit(1)
           EOF
