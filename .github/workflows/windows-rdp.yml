@@ -22,43 +22,38 @@ jobs:
       # 2. إعدادات الأمان والجدار الناري للـ RDP والتوافق مع Windows 7
       - name: Fix RDP Security & Firewall
         run: |
-          # تفعيل الاتصالات البعيدة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          
-          # إعدادات الأمان والتشفير المتوافقة مع الأنظمة القديمة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
-          
-          # فتح جميع قواعد الجدار الناري الخاصة بـ RDP
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          # تحسين الأداء الرسومي
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
-          
-          # إعادة تشغيل خدمة RDP لتطبيق التعديلات
           Restart-Service -Name TermService -Force
 
-      # 3. تثبيت وتشغيل Playit.gg
-      - name: Install & Run Playit.gg
+      # 3. تثبيت وتشغيل Playit وجلب الـ Claim Code تلقائياً
+      - name: Setup Playit.gg
         env:
           PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
         run: |
           Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe" -OutFile "playit.exe"
           
           if ($env:PLAYIT_SECRET_KEY) {
-              # تشغيل البرنامج باستخدام الـ Secret Key في الخلفية
-              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
-              Write-Host "==================================================" -ForegroundColor Green
-              Write-Host " [!] Playit.gg is running with your Secret Key" -ForegroundColor Cyan
-              Write-Host " Username : rdpuser" -ForegroundColor Yellow
-              Write-Host " Password : Password1234!" -ForegroundColor Yellow
-              Write-Host " Connection Address: Use your static domain from Playit dashboard" -ForegroundColor Yellow
-              Write-Host "==================================================" -ForegroundColor Green
+              Write-Host "[+] Secret Key Found. Starting Playit Agent in background..." -ForegroundColor Green
+              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY", "run"
           } else {
-              # تشغيل تفاعلي لجلب Claim Code في حال عدم وجود Secret Key
-              Write-Host "[!] PLAYIT_SECRET_KEY not found. Running setup to get Claim Code..." -ForegroundColor Yellow
-              .\playit.exe
+              Write-Host "[!] Generating Claim URL and Code..." -ForegroundColor Yellow
+              
+              # تشغيل أمر claim في الخلفية واستخراج الرابط
+              $job = Start-Job -ScriptBlock { & .\playit.exe claim }
+              Start-Sleep -Seconds 6
+              $output = Receive-Job -Job $job
+              
+              # طباعة المخرجات
+              Write-Host "==================================================" -ForegroundColor Cyan
+              $output | Out-String | Write-Host -ForegroundColor Yellow
+              Write-Host "==================================================" -ForegroundColor Cyan
+
+              # إبقاء السيرفر يعمل لربط الـ Agent
+              Start-Process -FilePath ".\playit.exe" -ArgumentList "run"
           }
 
       # 4. حلقة الإبقاء يعمل (Keep Alive Loop)
@@ -68,9 +63,4 @@ jobs:
           while ($i -lt 320) {
               Start-Sleep -Seconds 60
               $i++
-              if (-not (Get-Process -Name "playit" -ErrorAction SilentlyContinue)) {
-                  if ($env:PLAYIT_SECRET_KEY) {
-                      Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
-                  }
-              }
           }
