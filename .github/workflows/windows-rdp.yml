@@ -12,29 +12,37 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، المستخدم، وتحسينات الاستجابة الفائقة
-      - name: System & Network Low-Latency Tuning
+      # 1. إنشاء المستخدم بكلمة مرور صريحة وضبط الصلاحيات
+      - name: System & User Provisioning
         shell: powershell
         run: |
-          net user TitanAdmin "Matrix#2026!" /add
-          net localgroup Administrators TitanAdmin /add
-          net localgroup "Remote Desktop Users" TitanAdmin /add
+          $Username = "TitanAdmin"
+          $Password = "Matrix2026Pass"
 
+          # حذف المستخدم إن وجد مسبقاً ثم إعادة إنشائه
+          net user $Username /delete 2>$null
+          net user $Username $Password /add /expires:never /active:yes
+          net localgroup Administrators $Username /add
+          net localgroup "Remote Desktop Users" $Username /add
+
+          # تفعيل RDP وتعطيل NLA والتشفير المقيد
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
-          
+
+          # إلغاء قيود تغيير كلمة المرور عند أول تسجيل دخول
+          wmic useraccount where "name='$Username'" set PasswordExpires=FALSE
+          wmic useraccount where "name='$Username'" set PasswordChangeable=TRUE
+
+          # ضبط الأداء 60 FPS
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
-
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق Bore TCP المباشر بدون قيود وبدون أدوات طرفية على العميل
+      # 2. تشغيل نفق Bore TCP
       - name: Launch Bore Direct TCP Engine
         shell: bash
         run: |
@@ -84,19 +92,16 @@ jobs:
               print("[+] DIRECT RDP SESSION ACTIVE & READY")
               print(f" Direct Address : {rdp_address}")
               print(" Username       : TitanAdmin")
-              print(" Password       : Matrix#2026!")
-              print(" Limit          : Unlimited (350 Minutes Continuous)")
-              print(" Windows 7 Mode : 100% Native Compatible (No Client Apps)")
+              print(" Password       : Matrix2026Pass")
               print("=" * 60 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "w", encoding="utf-8") as f:
-                      f.write("### ⚡ Bore Unlimited RDP (Native Windows 7 Direct Connect)\n\n")
-                      f.write(f"* **Computer / Address:** `{rdp_address}`\n")
-                      f.write("* **Username:** `TitanAdmin`\n")
-                      f.write("* **Password:** `Matrix#2026!`\n")
-                      f.write("* **Duration:** 350 Minutes (Continuous Session)\n")
+                      f.write("### ⚡ Bore Unlimited RDP\n\n")
+                      f.write(f"* **Computer:** `{rdp_address}`\n")
+                      f.write("* **Username:** `.\\TitanAdmin`\n")
+                      f.write("* **Password:** `Matrix2026Pass`\n")
 
               minutes = 0
               while minutes < 340 and proc.poll() is None:
