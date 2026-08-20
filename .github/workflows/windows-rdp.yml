@@ -1,93 +1,111 @@
-name: Ultimate Stable RDP 2026
+name: Quantum Matrix RDP 2026
 
 on:
   workflow_dispatch:
 
 jobs:
-  rdp-session:
+  quantum-session:
     runs-on: windows-latest
     timeout-minutes: 350
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. إنشاء المستخدم ومنح الصلاحيات
-      - name: Initialize RDP User
+      # 1. تهيئة النظام، المستخدم، وتوافق Windows 7
+      - name: System & Windows 7 Kernel Optimization
         shell: powershell
         run: |
-          net user TitanAdmin P@ssw0rd2026! /add
-          net localgroup Administrators TitanAdmin /add
-          net localgroup "Remote Desktop Users" TitanAdmin /add
+          net user QuantumAdmin "Matrix#2026!" /add
+          net localgroup Administrators QuantumAdmin /add
+          net localgroup "Remote Desktop Users" QuantumAdmin /add
 
-      # 2. إعدادات الأمان والتوافق مع Windows 7
-      - name: Configure Windows 7 RDP Compatibility
-        shell: powershell
-        run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
           
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
+          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
+
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. إطلاق النفق وقراءة العنوان فورياً بدون حجز الذاكرة
-      - name: Launch Real-Time TCP Tunnel
-        shell: powershell
+      # 2. تشغيل محرك الأنفاق الذكي بنواة Python
+      - name: Launch Quantum Tunnel Core
+        shell: bash
         run: |
-          $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-          $pinfo.FileName = "ssh.exe"
-          $pinfo.Arguments = "-p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 a.pinggy.io b"
-          $pinfo.RedirectStandardOutput = $true
-          $pinfo.RedirectStandardError = $true
-          $pinfo.UseShellExecute = $false
-          $pinfo.CreateNoWindow = $true
+          python -u - << 'EOF'
+          import subprocess
+          import time
+          import re
+          import os
+          import sys
 
-          $process = New-Object System.Diagnostics.Process
-          $process.StartInfo = $pinfo
-          $process.Start() | Out-Null
+          print("[*] Starting Quantum Tunneling Engine...")
 
-          $rdpAddress = $null
-          $attempts = 0
+          # Launch unbuffered SSH TCP reverse tunnel
+          ssh_cmd = [
+              "ssh",
+              "-p", "443",
+              "-R", "0:localhost:3389",
+              "-o", "StrictHostKeyChecking=no",
+              "-o", "ServerAliveInterval=15",
+              "-o", "TCPKeepAlive=yes",
+              "a.pinggy.io",
+              "b"
+          ]
 
-          while (-not $rdpAddress -and $attempts -lt 25) {
-              Start-Sleep -Seconds 1
-              while (-not $process.StandardOutput.EndOfStream) {
-                  $line = $process.StandardOutput.ReadLine()
-                  Write-Host "[SSH Output] $line"
-                  if ($line -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
-                      $rdpAddress = $matches[1]
-                      break
-                  }
-              }
-              $attempts++
-          }
+          proc = subprocess.Popen(
+              ssh_cmd,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              bufsize=1
+          )
 
-          if ($rdpAddress) {
-              Write-Host "==========================================================" -ForegroundColor Green
-              Write-Host "SUCCESS: RDP IS READY TO CONNECT" -ForegroundColor Cyan
-              Write-Host "Address  : $rdpAddress" -ForegroundColor Yellow
-              Write-Host "Username : TitanAdmin" -ForegroundColor Yellow
-              Write-Host "Password : P@ssw0rd2026!" -ForegroundColor Yellow
-              Write-Host "==========================================================" -ForegroundColor Green
+          rdp_address = None
+          start_time = time.time()
 
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### RDP Connection Info"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("* **Computer / Address:** " + $rdpAddress)
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** TitanAdmin"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** P@ssw0rd2026!"
-          } else {
-              Write-Host "Failed to capture address in stream." -ForegroundColor Red
-              exit 1
-          }
+          # Scan stream for active TCP endpoint
+          while time.time() - start_time < 35:
+              line = proc.stdout.readline()
+              if not line:
+                  continue
+              
+              clean_line = line.strip()
+              print(f"[Core Stream] {clean_line}")
+              
+              match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+              if match:
+                  rdp_address = match.group(1)
+                  break
 
-      # 4. إبقاء الجلسة نشطة
-      - name: Keep Alive Loop
-        shell: powershell
-        run: |
-          $minutes = 0
-          while ($minutes -lt 340) {
-              Start-Sleep -Seconds 60
-              $minutes++
-          }
+          if rdp_address:
+              print("\n" + "=" * 58)
+              print(" [✓] QUANTUM RDP ACTIVE & CONNECTED")
+              print(f" Address  : {rdp_address}")
+              print(" Username : QuantumAdmin")
+              print(" Password : Matrix#2026!")
+              print("=" * 58 + "\n")
+
+              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_file:
+                  with open(summary_file, "a", encoding="utf-8") as f:
+                      f.write("## ⚡ Quantum RDP Session (60 FPS)\n\n")
+                      f.write("| Attribute | Value |\n")
+                      f.write("| :--- | :--- |\n")
+                      f.write(f"| **Computer / Address** | `{rdp_address}` |\n")
+                      f.write("| **Username** | `QuantumAdmin` |\n")
+                      f.write("| **Password** | `Matrix#2026!` |\n")
+                      f.write("| **Client Mode** | Native Windows 7 / 10 / 11 |\n")
+
+              # Heartbeat monitor loop
+              minutes = 0
+              while proc.poll() is None and minutes < 340:
+                  time.sleep(60)
+                  minutes += 1
+          else:
+              print("[!] Failed to obtain TCP tunnel endpoint.")
+              sys.exit(1)
+          EOF
