@@ -20,7 +20,7 @@ jobs:
           net localgroup Administrators TitanAdmin /add
           net localgroup "Remote Desktop Users" TitanAdmin /add
 
-      # 2. ضبط توافق كامل مع عميل Windows 7 وتجاوز NLA
+      # 2. إعدادات الأمان والتوافق مع Windows 7
       - name: Configure Windows 7 RDP Compatibility
         shell: powershell
         run: |
@@ -33,18 +33,19 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تشغيل النفق المباشر عبر منفذ 443 المشفر
+      # 3. إطلاق النفق المباشر مع تجاوز فحص المفاتيح
       - name: Launch Port-443 Tunnel
         shell: powershell
         run: |
-          $process = Start-Process -FilePath "ssh" -ArgumentList "-p 443", "-R0:localhost:3389", "-o StrictHostKeyChecking=no", "-o ServerAliveInterval=15", "-o TCPKeepAlive=yes", "a.pinggy.io", "b" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
+          $sshArgs = "-p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=20 a.pinggy.io b"
+          $proc = Start-Process -FilePath "ssh.exe" -ArgumentList $sshArgs -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
 
           $rdpAddress = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
               if (Test-Path "tunnel.log") {
                   $content = Get-Content "tunnel.log" -Raw
-                  if ($content -match "tcp://(\S+)") {
+                  if ($content -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
                       $rdpAddress = $matches[1]
                       break
                   }
@@ -58,18 +59,18 @@ jobs:
               Write-Host "Password           : P@ssw0rd2026!"
               Write-Host "=========================================================="
 
-              "### RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* **Computer / Address:** \`$rdpAddress\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* **Username:** \`TitanAdmin\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* **Password:** \`P@ssw0rd2026!\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### RDP Connection Info"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("* Computer: " + $rdpAddress)
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* Username: TitanAdmin"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* Password: P@ssw0rd2026!"
           } else {
-              Write-Host "Failed to extract tunnel URL. Logs:"
+              Write-Host "Logs Output:"
               if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
               if (Test-Path "tunnel_err.log") { Get-Content "tunnel_err.log" }
               exit 1
           }
 
-      # 4. الحفاظ على استمرار الجلسة
+      # 4. إبقاء الجلسة نشطة
       - name: Keep Alive Loop
         shell: powershell
         run: |
