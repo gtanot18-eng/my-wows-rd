@@ -1,10 +1,10 @@
-name: Quantum Matrix Unlimited RDP 2026
+name: Titan Unlimited Matrix RDP 2026
 
 on:
   workflow_dispatch:
 
 jobs:
-  quantum-session:
+  rdp-session:
     runs-on: windows-latest
     timeout-minutes: 350
 
@@ -16,9 +16,9 @@ jobs:
       - name: System & Windows 7 Kernel Optimization
         shell: powershell
         run: |
-          net user QuantumAdmin "Matrix#2026!" /add
-          net localgroup Administrators QuantumAdmin /add
-          net localgroup "Remote Desktop Users" QuantumAdmin /add
+          net user TitanAdmin "Matrix#2026!" /add
+          net localgroup Administrators TitanAdmin /add
+          net localgroup "Remote Desktop Users" TitanAdmin /add
 
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
@@ -31,38 +31,29 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق Serveo مع توليد منفذ مخصص وتلقائي
-      - name: Launch Unlimited TCP Tunnel
+      # 2. تشغيل نفق TCP ذكي مع مراقبة حية
+      - name: Launch Smart Tunnel Engine
         shell: bash
         run: |
           python -u - << 'EOF'
           import subprocess
           import time
-          import random
           import re
           import os
           import sys
 
-          print("[*] Initializing Dynamic Port Allocation Engine...")
-
-          rdp_address = None
-          max_attempts = 5
-
-          for attempt in range(max_attempts):
-              # توليد منفذ عشوائي في نطاق Serveo
-              target_port = random.randint(15000, 55000)
-              print(f"[*] Attempt {attempt + 1}: Requesting remote port {target_port}...")
-
+          def start_tunnel():
+              print("[*] Spawning Raw TCP Tunnel...")
               ssh_cmd = [
                   "ssh",
                   "-T",
-                  "-R", f"{target_port}:localhost:3389",
+                  "-p", "443",
+                  "-R", "0:localhost:3389",
                   "-o", "StrictHostKeyChecking=no",
                   "-o", "ServerAliveInterval=15",
                   "-o", "TCPKeepAlive=yes",
-                  "serveo.net"
+                  "tcp@a.pinggy.io"
               ]
-
               proc = subprocess.Popen(
                   ssh_cmd,
                   stdout=subprocess.PIPE,
@@ -70,51 +61,50 @@ jobs:
                   text=True,
                   bufsize=1
               )
-
+              
+              rdp_address = None
               start_time = time.time()
-              allocated = False
-
-              while time.time() - start_time < 12:
+              while time.time() - start_time < 30:
                   line = proc.stdout.readline()
                   if not line:
                       continue
-                  
                   clean_line = line.strip()
                   print(f"[Stream] {clean_line}")
-
-                  if "Forwarding TCP traffic from" in clean_line or f":{target_port}" in clean_line:
-                      rdp_address = f"serveo.net:{target_port}"
-                      allocated = True
+                  match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+                  if match:
+                      rdp_address = match.group(1)
                       break
-                  elif "failed for listen port" in clean_line:
-                      print(f"[!] Port {target_port} unavailable, retrying next port...")
-                      proc.terminate()
-                      break
+              return proc, rdp_address
 
-              if allocated:
-                  break
+          proc, address = start_tunnel()
 
-          if rdp_address:
+          if address:
               print("\n" + "=" * 58)
-              print(" [✓] UNLIMITED RDP ENGINE ACTIVE & READY")
-              print(f" Address  : {rdp_address}")
-              print(" Username : QuantumAdmin")
+              print(" [✓] TITAN RDP ACTIVE & READY")
+              print(f" Address  : {address}")
+              print(" Username : TitanAdmin")
               print(" Password : Matrix#2026!")
               print("=" * 58 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🖥️ Unlimited Quantum RDP Session\n\n")
-                      f.write(f"* **Computer / Address:** `{rdp_address}`\n")
-                      f.write("* **Username:** `QuantumAdmin`\n")
+                      f.write("### 🖥️ Titan RDP Session Active (60 FPS)\n\n")
+                      f.write(f"* **Computer / Address:** `{address}`\n")
+                      f.write("* **Username:** `TitanAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
 
+              # Auto-recovery watchdog loop
               minutes = 0
-              while proc.poll() is None and minutes < 340:
+              while minutes < 340:
                   time.sleep(60)
                   minutes += 1
+                  if proc.poll() is not None:
+                      print("[!] Tunnel closed. Restarting engine...")
+                      proc, address = start_tunnel()
+                      if address:
+                          print(f"[✓] New Reconnect Address: {address}")
           else:
-              print("[!] Failed to establish active TCP tunnel.")
+              print("[!] Failed to obtain TCP tunnel endpoint.")
               sys.exit(1)
           EOF
