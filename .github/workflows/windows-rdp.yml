@@ -29,7 +29,7 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تثبيت وتشغيل Playit وجلب الـ Claim Code تلقائياً
+      # 3. تثبيت وتشغيل Playit وجلب الـ Claim Link
       - name: Setup Playit.gg
         env:
           PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
@@ -38,22 +38,41 @@ jobs:
           
           if ($env:PLAYIT_SECRET_KEY) {
               Write-Host "[+] Secret Key Found. Starting Playit Agent in background..." -ForegroundColor Green
-              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY", "run"
+              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
           } else {
               Write-Host "[!] Generating Claim URL and Code..." -ForegroundColor Yellow
               
-              # تشغيل أمر claim في الخلفية واستخراج الرابط
-              $job = Start-Job -ScriptBlock { & .\playit.exe claim }
-              Start-Sleep -Seconds 6
-              $output = Receive-Job -Job $job
+              # تشغيل playit وتوجيه المخرجات إلى ملف نصي
+              $process = Start-Process -FilePath ".\playit.exe" -RedirectStandardOutput "playit_log.txt" -RedirectStandardError "playit_err.txt" -PassThru
               
-              # طباعة المخرجات
-              Write-Host "==================================================" -ForegroundColor Cyan
-              $output | Out-String | Write-Host -ForegroundColor Yellow
-              Write-Host "==================================================" -ForegroundColor Cyan
+              $claimUrl = $null
+              $attempts = 0
+              while (-not $claimUrl -and $attempts -lt 15) {
+                  Start-Sleep -Seconds 2
+                  if (Test-Path "playit_log.txt") {
+                      $content = Get-Content "playit_log.txt" -Raw
+                      if ($content -match "https://playit\.gg/claim/\S+") {
+                          $claimUrl = $matches[0]
+                      }
+                  }
+                  $attempts++
+              }
 
-              # إبقاء السيرفر يعمل لربط الـ Agent
-              Start-Process -FilePath ".\playit.exe" -ArgumentList "run"
+              if ($claimUrl) {
+                  Write-Host "==================================================" -ForegroundColor Green
+                  Write-Host " [!] CLAIM URL FOUND:" -ForegroundColor Cyan
+                  Write-Host " $claimUrl" -ForegroundColor Yellow
+                  Write-Host "==================================================" -ForegroundColor Green
+
+                  $Line1 = "### 🔗 Playit.gg Claim URL"
+                  $Line2 = "افتح الرابط التالي لربط الـ Agent وحفظ المفتاح:"
+                  $Line3 = "* [$claimUrl]($claimUrl)"
+                  Set-Content -Path $env:GITHUB_STEP_SUMMARY -Value @($Line1, $Line2, $Line3)
+              } else {
+                  Write-Host "Logs Output:" -ForegroundColor Red
+                  if (Test-Path "playit_log.txt") { Get-Content "playit_log.txt" }
+                  if (Test-Path "playit_err.txt") { Get-Content "playit_err.txt" }
+              }
           }
 
       # 4. حلقة الإبقاء يعمل (Keep Alive Loop)
@@ -63,4 +82,9 @@ jobs:
           while ($i -lt 320) {
               Start-Sleep -Seconds 60
               $i++
+              if (-not (Get-Process -Name "playit" -ErrorAction SilentlyContinue)) {
+                  if ($env:PLAYIT_SECRET_KEY) {
+                      Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
+                  }
+              }
           }
