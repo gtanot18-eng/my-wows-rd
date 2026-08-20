@@ -33,40 +33,52 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. إطلاق النفق المباشر مع تجاوز فحص المفاتيح
-      - name: Launch Port-443 Tunnel
+      # 3. إطلاق النفق وقراءة العنوان فورياً بدون حجز الذاكرة
+      - name: Launch Real-Time TCP Tunnel
         shell: powershell
         run: |
-          $sshArgs = "-p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=20 a.pinggy.io b"
-          $proc = Start-Process -FilePath "ssh.exe" -ArgumentList $sshArgs -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
+          $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+          $pinfo.FileName = "ssh.exe"
+          $pinfo.Arguments = "-p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 a.pinggy.io b"
+          $pinfo.RedirectStandardOutput = $true
+          $pinfo.RedirectStandardError = $true
+          $pinfo.UseShellExecute = $false
+          $pinfo.CreateNoWindow = $true
+
+          $process = New-Object System.Diagnostics.Process
+          $process.StartInfo = $pinfo
+          $process.Start() | Out-Null
 
           $rdpAddress = $null
-          for ($i = 0; $i -lt 15; $i++) {
-              Start-Sleep -Seconds 2
-              if (Test-Path "tunnel.log") {
-                  $content = Get-Content "tunnel.log" -Raw
-                  if ($content -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
+          $attempts = 0
+
+          while (-not $rdpAddress -and $attempts -lt 25) {
+              Start-Sleep -Seconds 1
+              while (-not $process.StandardOutput.EndOfStream) {
+                  $line = $process.StandardOutput.ReadLine()
+                  Write-Host "[SSH Output] $line"
+                  if ($line -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
                       $rdpAddress = $matches[1]
                       break
                   }
               }
+              $attempts++
           }
 
           if ($rdpAddress) {
-              Write-Host "=========================================================="
-              Write-Host "RDP CONNECT ADDRESS: $rdpAddress"
-              Write-Host "Username           : TitanAdmin"
-              Write-Host "Password           : P@ssw0rd2026!"
-              Write-Host "=========================================================="
+              Write-Host "==========================================================" -ForegroundColor Green
+              Write-Host "SUCCESS: RDP IS READY TO CONNECT" -ForegroundColor Cyan
+              Write-Host "Address  : $rdpAddress" -ForegroundColor Yellow
+              Write-Host "Username : TitanAdmin" -ForegroundColor Yellow
+              Write-Host "Password : P@ssw0rd2026!" -ForegroundColor Yellow
+              Write-Host "==========================================================" -ForegroundColor Green
 
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### RDP Connection Info"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("* Computer: " + $rdpAddress)
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* Username: TitanAdmin"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* Password: P@ssw0rd2026!"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("* **Computer / Address:** " + $rdpAddress)
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** TitanAdmin"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** P@ssw0rd2026!"
           } else {
-              Write-Host "Logs Output:"
-              if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
-              if (Test-Path "tunnel_err.log") { Get-Content "tunnel_err.log" }
+              Write-Host "Failed to capture address in stream." -ForegroundColor Red
               exit 1
           }
 
