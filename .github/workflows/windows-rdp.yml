@@ -12,23 +12,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. إنشاء حساب مستخدم بصلاحيات كاملة وتفعيل VNC / Screen Sharing
-      - name: Configure macOS Screen Sharing & User
+      # 1. تهيئة شاشة وهمية وتفعيل الدخول التلقائي للواجهة الرسومية
+      - name: Setup Headless macOS Desktop & VNC
         run: |
-          sudo dscl . -create /Users/macadmin
-          sudo dscl . -create /Users/macadmin UserShell /bin/zsh
-          sudo dscl . -create /Users/macadmin RealName "Mac Administrator"
-          sudo dscl . -create /Users/macadmin UniqueID "502"
-          sudo dscl . -create /Users/macadmin PrimaryGroupID 20
-          sudo dscl . -create /Users/macadmin NFSHomeDirectory /Users/macadmin
-          sudo dscl . -passwd /Users/macadmin "Matrix#2026!"
-          sudo dscl . -append /Groups/admin GroupMembership macadmin
+          # تثبيت أدوات إنشاء الشاشة والتحكم الرسومي
+          brew install tiger-vnc
 
-          # تفعيل Screen Sharing (VNC) على المنفذ 5900
-          sudo defaults write /var/db/launchd.db/com.apple.launchd/overrides.plist com.apple.screensharing -dict Disabled -bool false
-          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
+          # إعداد مجلد وكلمة مرور VNC
+          mkdir -p ~/.vnc
+          echo "Matrix2026" | vncpasswd -f > ~/.vnc/passwd
+          chmod 600 ~/.vnc/passwd
 
-      # 2. تشغيل نفق TCP بنواة Python لربط منفذ 5900
+          # إجبار macOS على تشغيل واجهة المستخدم الرسومية بدون قفل
+          sudo defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser "runner"
+
+          # تشغيل خادم VNC بدقة 1080p على المنفذ 5901
+          vncserver :1 -geometry 1920x1080 -depth 24 -localhost no
+
+      # 2. تشغيل نفق TCP بنواة Python لربط منفذ الشاشة 5901
       - name: Launch macOS TCP Tunnel
         run: |
           python3 -u - << 'EOF'
@@ -39,12 +40,12 @@ jobs:
           import sys
 
           def start_tunnel():
-              print("[*] Spawning Raw TCP Tunnel for macOS VNC (Port 5900)...")
+              print("[*] Spawning Raw TCP Tunnel for macOS Display (Port 5901)...")
               ssh_cmd = [
                   "ssh",
                   "-T",
                   "-p", "443",
-                  "-R", "0:localhost:5900",
+                  "-R", "0:localhost:5901",
                   "-o", "StrictHostKeyChecking=no",
                   "-o", "ServerAliveInterval=15",
                   "-o", "TCPKeepAlive=yes",
@@ -76,19 +77,17 @@ jobs:
 
           if address:
               print("\n" + "=" * 58)
-              print("[+] MACOS CLOUD SESSION READY")
-              print(f" VNC Address : {address}")
-              print(" Username    : macadmin")
-              print(" Password    : Matrix#2026!")
+              print("[+] MACOS DESKTOP READY")
+              print(f" VNC Address  : {address}")
+              print(" VNC Password : Matrix2026")
               print("=" * 58 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🍏 macOS Cloud Session (Screen Sharing)\n\n")
-                      f.write(f"* **VNC / Address:** `{address}`\n")
-                      f.write("* **Username:** `macadmin`\n")
-                      f.write("* **Password:** `Matrix#2026!`\n")
+                      f.write("### 🍏 macOS Desktop Active (1080p)\n\n")
+                      f.write(f"* **VNC Server / Address:** `{address}`\n")
+                      f.write("* **VNC Password:** `Matrix2026`\n")
 
               minutes = 0
               while minutes < 340:
