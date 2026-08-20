@@ -1,38 +1,41 @@
-name: macOS Cloud Session 2026
+name: Titan Unlimited Matrix RDP 2026
 
 on:
   workflow_dispatch:
 
 jobs:
-  macos-session:
-    runs-on: macos-latest
+  rdp-session:
+    runs-on: windows-latest
     timeout-minutes: 350
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة الشاشة الافتراضية وتفعيل جلسة VNC الرسومية
-      - name: Configure macOS GUI & VNC Server
+      # 1. ????? ???????? ?????? Windows 7 ? 60 FPS
+      - name: System & Windows 7 Kernel Optimization
+        shell: powershell
         run: |
-          # إضافة مسارات Homebrew على معالجات Apple Silicon
-          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+          net user TitanAdmin "Matrix#2026!" /add
+          net localgroup Administrators TitanAdmin /add
+          net localgroup "Remote Desktop Users" TitanAdmin /add
 
-          # تفعيل خدمة مشاركة الشاشة الرسمية وضبط صلاحيات الواجهة
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -setvncpw -vncpw "Matrix2026" \
-            -restart -agent
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
+          
+          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
+          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-          # إجبار النظام على تنشيط نافذة سطح المكتب وتخطي وضع الخمول
-          sudo defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser "runner"
-          caffeinate -d -i -m -u &
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Restart-Service -Name TermService -Force
 
-      # 2. إطلاق نفق TCP بنواة Python لربط منفذ VNC (5900)
-      - name: Launch macOS TCP Tunnel
+      # 2. ????? ??? TCP ???
+      - name: Launch Smart Tunnel Engine
+        shell: bash
         run: |
-          python3 -u - << 'EOF'
+          python -u - << 'EOF'
           import subprocess
           import time
           import re
@@ -40,12 +43,12 @@ jobs:
           import sys
 
           def start_tunnel():
-              print("[*] Spawning Raw TCP Tunnel for macOS GUI (Port 5900)...")
+              print("[*] Spawning Raw TCP Tunnel...")
               ssh_cmd = [
                   "ssh",
                   "-T",
                   "-p", "443",
-                  "-R", "0:localhost:5900",
+                  "-R", "0:localhost:3389",
                   "-o", "StrictHostKeyChecking=no",
                   "-o", "ServerAliveInterval=15",
                   "-o", "TCPKeepAlive=yes",
@@ -59,7 +62,7 @@ jobs:
                   bufsize=1
               )
               
-              vnc_address = None
+              rdp_address = None
               start_time = time.time()
               while time.time() - start_time < 30:
                   line = proc.stdout.readline()
@@ -69,26 +72,29 @@ jobs:
                   print(f"[Stream] {clean_line}")
                   match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
                   if match:
-                      vnc_address = match.group(1)
+                      rdp_address = match.group(1)
                       break
-              return proc, vnc_address
+              return proc, rdp_address
 
           proc, address = start_tunnel()
 
           if address:
               print("\n" + "=" * 58)
-              print("[+] MACOS CLOUD DESKTOP ACTIVE")
-              print(f" VNC Address  : {address}")
-              print(" VNC Password : Matrix2026")
+              print("[+] TITAN RDP ACTIVE & READY")
+              print(f" Address  : {address}")
+              print(" Username : TitanAdmin")
+              print(" Password : Matrix#2026!")
               print("=" * 58 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🍏 macOS Cloud Desktop Active\n\n")
-                      f.write(f"* **VNC Server / Address:** `{address}`\n")
-                      f.write("* **VNC Password:** `Matrix2026`\n")
+                      f.write("### RDP Session Active (60 FPS)\n\n")
+                      f.write(f"* **Address:** `{address}`\n")
+                      f.write("* **Username:** `TitanAdmin`\n")
+                      f.write("* **Password:** `Matrix#2026!`\n")
 
+              # Auto-recovery watchdog loop
               minutes = 0
               while minutes < 340:
                   time.sleep(60)
