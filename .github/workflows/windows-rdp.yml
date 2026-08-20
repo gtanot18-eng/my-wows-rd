@@ -1,4 +1,4 @@
-name: Quantum Matrix RDP 2026
+name: Quantum Matrix Unlimited RDP 2026
 
 on:
   workflow_dispatch:
@@ -31,8 +31,8 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق SSH بنواة Python بعد تصحيح المعاملات
-      - name: Launch Quantum Tunnel Core
+      # 2. تشغيل نفق Serveo TCP غير المحدود بنواة Python
+      - name: Launch Unlimited TCP Tunnel
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -42,17 +42,16 @@ jobs:
           import os
           import sys
 
-          print("[*] Launching Quantum TCP Tunnel...")
+          print("[*] Launching Unlimited Serveo TCP Tunnel...")
 
           ssh_cmd = [
               "ssh",
               "-T",
-              "-p", "443",
               "-R", "0:localhost:3389",
               "-o", "StrictHostKeyChecking=no",
               "-o", "ServerAliveInterval=15",
               "-o", "TCPKeepAlive=yes",
-              "a.pinggy.io"
+              "serveo.net"
           ]
 
           proc = subprocess.Popen(
@@ -74,14 +73,16 @@ jobs:
               clean_line = line.strip()
               print(f"[Stream] {clean_line}")
               
-              match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+              # التقاط المنفذ المحول من خادم Serveo
+              match = re.search(r"Forwarding TCP traffic from (?:[a-zA-Z0-9\.\-]+:)?(\d+)", clean_line)
               if match:
-                  rdp_address = match.group(1)
+                  port = match.group(1)
+                  rdp_address = f"serveo.net:{port}"
                   break
 
           if rdp_address:
               print("\n" + "=" * 58)
-              print(" [✓] RDP ENGINE ACTIVE & READY")
+              print(" [✓] UNLIMITED RDP ENGINE ACTIVE & READY")
               print(f" Address  : {rdp_address}")
               print(" Username : QuantumAdmin")
               print(" Password : Matrix#2026!")
@@ -90,17 +91,16 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🖥️ Quantum RDP Session Ready (60 FPS)\n\n")
+                      f.write("### 🖥️ Unlimited Quantum RDP Session (No Time Limit)\n\n")
                       f.write(f"* **Computer / Address:** `{rdp_address}`\n")
                       f.write("* **Username:** `QuantumAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
 
-              # الحفاظ على تشغيل الجلسة
               minutes = 0
               while proc.poll() is None and minutes < 340:
                   time.sleep(60)
                   minutes += 1
           else:
-              print("[!] Failed to parse TCP tunnel address.")
+              print("[!] Failed to allocate Serveo port.")
               sys.exit(1)
           EOF
