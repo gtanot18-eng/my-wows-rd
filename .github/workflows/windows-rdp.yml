@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 1. إنشاء المستخدم المخصص
+      # 1. Create Dedicated RDP User
       - name: Initialize RDP User
         shell: powershell
         run: |
@@ -20,7 +20,7 @@ jobs:
           net localgroup Administrators TitanAdmin /add
           net localgroup "Remote Desktop Users" TitanAdmin /add
 
-      # 2. هندسة التوافق مع Windows 7 وكسر معدل الإطارات إلى 60 FPS
+      # 2. Configure RDP Security and 60 FPS Tweaks
       - name: Configure Low-Latency RDP
         shell: powershell
         run: |
@@ -35,22 +35,20 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. إطلاق محرك Bore Rust واستخراج عنوان الاتصال
+      # 3. Launch Bore TCP Engine
       - name: Launch Bore TCP Engine
         shell: powershell
         run: |
-          # تحميل محرك Bore الرسمي المترجم للويندوز
-          curl.exe -L -o bore.zip "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip"
+          curl.exe -L -o bore.zip https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip
           tar.exe -xf bore.zip
 
-          # تشغيل النفق المباشر إلى المنفذ 3389
-          $proc = Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -PassThru
+          $proc = Start-Process -FilePath .\bore.exe -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput bore.log -RedirectStandardError bore_err.log -PassThru
 
           $assignedPort = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
-              if (Test-Path "bore.log") {
-                  $logContent = Get-Content "bore.log" -Raw
+              if (Test-Path bore.log) {
+                  $logContent = Get-Content bore.log -Raw
                   if ($logContent -match "listening at bore\.pub:(\d+)") {
                       $assignedPort = $matches[1]
                       break
@@ -60,25 +58,24 @@ jobs:
 
           if ($assignedPort) {
               $fullAddress = "bore.pub:$assignedPort"
-              Write-Host "==========================================================" -ForegroundColor Green
-              Write-Host "[*] BORE RDP ENGINE CONNECTED SUCCESSFULLY" -ForegroundColor Cyan
-              Write-Host "Address  : $fullAddress" -ForegroundColor Yellow
-              Write-Host "Username : TitanAdmin" -ForegroundColor Yellow
-              Write-Host "Password : P@ssw0rd2026!" -ForegroundColor Yellow
-              Write-Host "==========================================================" -ForegroundColor Green
+              Write-Host "=========================================================="
+              Write-Host "BORE RDP READY: $fullAddress"
+              Write-Host "Username      : TitanAdmin"
+              Write-Host "Password      : P@ssw0rd2026!"
+              Write-Host "=========================================================="
 
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ⚡ Bore RDP Session Ready (60 FPS)"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Address:** `$fullAddress`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `TitanAdmin`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `P@ssw0rd2026!`"
+              "### RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Address: $fullAddress" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Username: TitanAdmin" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Password: P@ssw0rd2026!" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           } else {
-              Write-Host "Bore Log Output:" -ForegroundColor Red
-              if (Test-Path "bore.log") { Get-Content "bore.log" }
-              if (Test-Path "bore_err.log") { Get-Content "bore_err.log" }
+              Write-Host "Bore failed to bind port. Log Dump:"
+              if (Test-Path bore.log) { Get-Content bore.log }
+              if (Test-Path bore_err.log) { Get-Content bore_err.log }
               exit 1
           }
 
-      # 4. الحفاظ على استمرار الجلسة
+      # 4. Keep Alive Loop
       - name: Keep Alive Loop
         shell: powershell
         run: |
