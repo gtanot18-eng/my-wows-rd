@@ -39,7 +39,7 @@ jobs:
           
           # تعطيل NLA وإجبار استخدام Standard RDP Security
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           
           # إيقاف UDP للـ RDP ليعمل عبر TCP فقط مع Ngrok
           New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "fClientDisableUDP" -PropertyType DWORD -Value 1 -Force
