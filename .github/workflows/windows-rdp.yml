@@ -31,30 +31,32 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تشغيل النفق المباشر عبر SSH المدمج بدون تحميل ملفات خارجية
+      # 3. تشغيل النفق المباشر بوضع النص الفوري (Batch Mode)
       - name: Start Direct Tunnel
         shell: powershell
         run: |
-          # تشغيل اتصال النفق المباشر وحفظ المخرجات في ملف نصي
-          Start-Process -FilePath "ssh" -ArgumentList "-p 443", "-R0:localhost:3389", "-o StrictHostKeyChecking=no", "-o ServerAliveInterval=30", "-o TCPKeepAlive=yes", "a.pinggy.io" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log"
+          # تشغيل ssh مع تمرير وسيط "b" لطباعة الروابط مباشرة كنص
+          Start-Process -FilePath "ssh" -ArgumentList "-p 443", "-R0:localhost:3389", "-o StrictHostKeyChecking=no", "-o ServerAliveInterval=30", "-o TCPKeepAlive=yes", "a.pinggy.io", "b" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log"
 
           # انتظار توليد الرابط
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 6
 
-          if (Test-Path "tunnel.log") {
-              $logContent = Get-Content "tunnel.log" -Raw
-              Write-Host "================ TUNNEL OUTPUT ================" -ForegroundColor Cyan
-              Write-Host $logContent -ForegroundColor Yellow
-              Write-Host "===============================================" -ForegroundColor Cyan
+          $output = ""
+          if (Test-Path "tunnel.log") { $output += (Get-Content "tunnel.log" -Raw) }
+          if (Test-Path "tunnel_err.log") { $output += "`n" + (Get-Content "tunnel_err.log" -Raw) }
 
-              # كتابة ملخص الاتصال
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### RDP Connection Info"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Check the step logs above for the generated tcp:// address"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Username: rdpuser"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Password: Password1234!"
-          } else {
-              Write-Host "Failed to capture tunnel log." -ForegroundColor Red
-              if (Test-Path "tunnel_err.log") { Get-Content "tunnel_err.log" }
+          Write-Host "================ TUNNEL OUTPUT ================" -ForegroundColor Cyan
+          Write-Host $output -ForegroundColor Yellow
+          Write-Host "===============================================" -ForegroundColor Cyan
+
+          # استخراج العنوان وطباعته في الـ Summary
+          if ($output -match "tcp://(\S+)") {
+              $rdpHost = $matches[1]
+              Write-Host "[!] Address: $rdpHost" -ForegroundColor Green
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### 🖥️ RDP Connection Info"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Address:** `$rdpHost`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `rdpuser`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `Password1234!`"
           }
 
       # 4. إبقاء الجلسة نشطة
