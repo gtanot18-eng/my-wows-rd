@@ -1,4 +1,4 @@
-name: Windows RDP Playit Session
+name: Windows RDP Simple & Free
 
 on:
   workflow_dispatch:
@@ -31,47 +31,42 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تثبيت وتشغيل Playit باستخدام curl لتفادي انقطاع التحميل
-      - name: Setup and Run Playit
+      # 3. تشغيل نفق TCP مجاني عبر LocalXpose
+      - name: Start TCP Tunnel
         shell: powershell
-        env:
-          PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
         run: |
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          # تحميل الأداة الرسمية
+          curl.exe -L -o loclx.exe "https://api.localxpose.io/api/v2/downloads/loclx-windows-amd64.exe"
           
-          # التحميل عبر curl المدمج مع إعادة المحاولة تلقائياً
-          curl.exe -L --retry 5 --retry-delay 2 "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-win_amd64-0.15.26.exe" -o "playit.exe"
-          
-          if ($env:PLAYIT_SECRET_KEY) {
-              Write-Host "Starting Playit with Secret Key..." -ForegroundColor Green
-              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
-          } else {
-              Write-Host "Extracting Claim URL..." -ForegroundColor Yellow
-              $proc = Start-Process -FilePath ".\playit.exe" -RedirectStandardOutput "playit_out.log" -RedirectStandardError "playit_err.log" -PassThru
-              
-              $claimUrl = $null
-              for ($i = 0; $i -lt 12; $i++) {
-                  Start-Sleep -Seconds 2
-                  if (Test-Path "playit_out.log") {
-                      $text = Get-Content "playit_out.log" -Raw
-                      if ($text -match "https://playit\.gg/claim/\S+") {
-                          $claimUrl = $matches[0]
-                          break
-                      }
+          # تشغيل النفق
+          $proc = Start-Process -FilePath ".\loclx.exe" -ArgumentList "tunnel", "tcp", "--to", "127.0.0.1:3389" -RedirectStandardOutput "loclx.log" -RedirectStandardError "loclx_err.log" -PassThru
+
+          $rdpAddress = $null
+          for ($i = 0; $i -lt 15; $i++) {
+              Start-Sleep -Seconds 2
+              if (Test-Path "loclx.log") {
+                  $content = Get-Content "loclx.log" -Raw
+                  if ($content -match "([a-zA-Z0-9\.\-]+\.loclx\.io:[0-9]+)") {
+                      $rdpAddress = $matches[1]
+                      break
                   }
               }
+          }
 
-              if ($claimUrl) {
-                  Write-Host "==================================================" -ForegroundColor Green
-                  Write-Host "CLAIM URL: $claimUrl" -ForegroundColor Yellow
-                  Write-Host "==================================================" -ForegroundColor Green
-                  
-                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Playit Claim URL"
-                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Open this link: $claimUrl"
-              } else {
-                  if (Test-Path "playit_out.log") { Get-Content "playit_out.log" }
-                  if (Test-Path "playit_err.log") { Get-Content "playit_err.log" }
-              }
+          if ($rdpAddress) {
+              Write-Host "==================================================" -ForegroundColor Green
+              Write-Host " [!] Address  : $rdpAddress" -ForegroundColor Yellow
+              Write-Host " [!] Username : rdpuser" -ForegroundColor Yellow
+              Write-Host " [!] Password : Password1234!" -ForegroundColor Yellow
+              Write-Host "==================================================" -ForegroundColor Green
+
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### 🖥️ RDP Connection Info"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Address:** `$rdpAddress`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `rdpuser`"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `Password1234!`"
+          } else {
+              if (Test-Path "loclx.log") { Get-Content "loclx.log" }
+              if (Test-Path "loclx_err.log") { Get-Content "loclx_err.log" }
           }
 
       # 4. إبقاء الجلسة تعمل
@@ -82,9 +77,4 @@ jobs:
           while ($i -lt 320) {
               Start-Sleep -Seconds 60
               $i++
-              if (-not (Get-Process -Name "playit" -ErrorAction SilentlyContinue)) {
-                  if ($env:PLAYIT_SECRET_KEY) {
-                      Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
-                  }
-              }
           }
