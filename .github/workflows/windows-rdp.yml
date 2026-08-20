@@ -12,30 +12,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. إنشاء المستخدم بكلمة مرور صريحة وضبط الصلاحيات
-      - name: System & User Provisioning
+      # 1. تهيئة كلمة المرور وتفعيل صلاحيات RDP
+      - name: Configure Built-in RunnerAdmin
         shell: powershell
         run: |
-          $Username = "TitanAdmin"
-          $Password = "Matrix2026Pass"
+          # تعيين كلمة مرور صريحة للمستخدم الأساسي runneradmin
+          $adminUser = "runneradmin"
+          $password = "Matrix2026Pass"
+          
+          net user $adminUser $password
+          net localgroup Administrators $adminUser /add
+          net localgroup "Remote Desktop Users" $adminUser /add
 
-          # حذف المستخدم إن وجد مسبقاً ثم إعادة إنشائه
-          net user $Username /delete 2>$null
-          net user $Username $Password /add /expires:never /active:yes
-          net localgroup Administrators $Username /add
-          net localgroup "Remote Desktop Users" $Username /add
-
-          # تفعيل RDP وتعطيل NLA والتشفير المقيد
+          # تفعيل RDP وتعطيل NLA والتشفير المقيد لـ Windows 7
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
 
-          # إلغاء قيود تغيير كلمة المرور عند أول تسجيل دخول
-          wmic useraccount where "name='$Username'" set PasswordExpires=FALSE
-          wmic useraccount where "name='$Username'" set PasswordChangeable=TRUE
-
-          # ضبط الأداء 60 FPS
+          # تسريع الاستجابة ومعدل 60 FPS
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
@@ -91,16 +86,16 @@ jobs:
               print("\n" + "=" * 60)
               print("[+] DIRECT RDP SESSION ACTIVE & READY")
               print(f" Direct Address : {rdp_address}")
-              print(" Username       : TitanAdmin")
+              print(" Username       : runneradmin")
               print(" Password       : Matrix2026Pass")
               print("=" * 60 + "\n")
 
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
-                  with open(summary_file, "w", encoding="utf-8") as f:
+                  with open(summary_file, "a", encoding="utf-8") as f:
                       f.write("### ⚡ Bore Unlimited RDP\n\n")
                       f.write(f"* **Computer:** `{rdp_address}`\n")
-                      f.write("* **Username:** `.\\TitanAdmin`\n")
+                      f.write("* **Username:** `runneradmin` (or `.\\runneradmin`)\n")
                       f.write("* **Password:** `Matrix2026Pass`\n")
 
               minutes = 0
