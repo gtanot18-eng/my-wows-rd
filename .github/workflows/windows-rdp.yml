@@ -31,53 +31,67 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق Serveo TCP غير المحدود بنواة Python
+      # 2. تشغيل نفق Serveo مع توليد منفذ مخصص وتلقائي
       - name: Launch Unlimited TCP Tunnel
         shell: bash
         run: |
           python -u - << 'EOF'
           import subprocess
           import time
+          import random
           import re
           import os
           import sys
 
-          print("[*] Launching Unlimited Serveo TCP Tunnel...")
-
-          ssh_cmd = [
-              "ssh",
-              "-T",
-              "-R", "0:localhost:3389",
-              "-o", "StrictHostKeyChecking=no",
-              "-o", "ServerAliveInterval=15",
-              "-o", "TCPKeepAlive=yes",
-              "serveo.net"
-          ]
-
-          proc = subprocess.Popen(
-              ssh_cmd,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1
-          )
+          print("[*] Initializing Dynamic Port Allocation Engine...")
 
           rdp_address = None
-          start_time = time.time()
+          max_attempts = 5
 
-          while time.time() - start_time < 35:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              
-              clean_line = line.strip()
-              print(f"[Stream] {clean_line}")
-              
-              # التقاط المنفذ المحول من خادم Serveo
-              match = re.search(r"Forwarding TCP traffic from (?:[a-zA-Z0-9\.\-]+:)?(\d+)", clean_line)
-              if match:
-                  port = match.group(1)
-                  rdp_address = f"serveo.net:{port}"
+          for attempt in range(max_attempts):
+              # توليد منفذ عشوائي في نطاق Serveo
+              target_port = random.randint(15000, 55000)
+              print(f"[*] Attempt {attempt + 1}: Requesting remote port {target_port}...")
+
+              ssh_cmd = [
+                  "ssh",
+                  "-T",
+                  "-R", f"{target_port}:localhost:3389",
+                  "-o", "StrictHostKeyChecking=no",
+                  "-o", "ServerAliveInterval=15",
+                  "-o", "TCPKeepAlive=yes",
+                  "serveo.net"
+              ]
+
+              proc = subprocess.Popen(
+                  ssh_cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  bufsize=1
+              )
+
+              start_time = time.time()
+              allocated = False
+
+              while time.time() - start_time < 12:
+                  line = proc.stdout.readline()
+                  if not line:
+                      continue
+                  
+                  clean_line = line.strip()
+                  print(f"[Stream] {clean_line}")
+
+                  if "Forwarding TCP traffic from" in clean_line or f":{target_port}" in clean_line:
+                      rdp_address = f"serveo.net:{target_port}"
+                      allocated = True
+                      break
+                  elif "failed for listen port" in clean_line:
+                      print(f"[!] Port {target_port} unavailable, retrying next port...")
+                      proc.terminate()
+                      break
+
+              if allocated:
                   break
 
           if rdp_address:
@@ -91,7 +105,7 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🖥️ Unlimited Quantum RDP Session (No Time Limit)\n\n")
+                      f.write("### 🖥️ Unlimited Quantum RDP Session\n\n")
                       f.write(f"* **Computer / Address:** `{rdp_address}`\n")
                       f.write("* **Username:** `QuantumAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
@@ -101,6 +115,6 @@ jobs:
                   time.sleep(60)
                   minutes += 1
           else:
-              print("[!] Failed to allocate Serveo port.")
+              print("[!] Failed to establish active TCP tunnel.")
               sys.exit(1)
           EOF
