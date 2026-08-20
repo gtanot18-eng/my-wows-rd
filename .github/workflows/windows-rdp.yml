@@ -1,4 +1,4 @@
-name: Titan Unlimited Matrix RDP 2026
+name: Titan Unlimited Ultra-Fast RDP 2026
 
 on:
   workflow_dispatch:
@@ -12,8 +12,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. ????? ???????? ?????? Windows 7 ? 60 FPS
-      - name: System & Windows 7 Kernel Optimization
+      # 1. تهيئة النظام، المستخدم، وتحسينات خفض زمن التأخير
+      - name: System & Network Low-Latency Tuning
         shell: powershell
         run: |
           net user TitanAdmin "Matrix#2026!" /add
@@ -25,14 +25,19 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
           
+          # رفع معدل الإطارات إلى 60 FPS وإيقاف المؤثرات الثقيلة
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
+
+          # تسريع شبكة RDP وتقليل تأخير حزم TCP
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. ????? ??? TCP ???
-      - name: Launch Smart Tunnel Engine
+      # 2. تشغيل نفق TCP الموجه لأقرب سيرفر أوروبي منخفض البينغ
+      - name: Launch High-Speed European Tunnel
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -43,16 +48,16 @@ jobs:
           import sys
 
           def start_tunnel():
-              print("[*] Spawning Raw TCP Tunnel...")
+              print("[*] Spawning Low-Latency EU TCP Tunnel...")
               ssh_cmd = [
                   "ssh",
                   "-T",
                   "-p", "443",
                   "-R", "0:localhost:3389",
                   "-o", "StrictHostKeyChecking=no",
-                  "-o", "ServerAliveInterval=15",
+                  "-o", "ServerAliveInterval=10",
                   "-o", "TCPKeepAlive=yes",
-                  "tcp@a.pinggy.io"
+                  "tcp@eu.a.pinggy.io"
               ]
               proc = subprocess.Popen(
                   ssh_cmd,
@@ -80,7 +85,7 @@ jobs:
 
           if address:
               print("\n" + "=" * 58)
-              print("[+] TITAN RDP ACTIVE & READY")
+              print("[+] TITAN LOW-LATENCY RDP READY")
               print(f" Address  : {address}")
               print(" Username : TitanAdmin")
               print(" Password : Matrix#2026!")
@@ -89,7 +94,7 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### RDP Session Active (60 FPS)\n\n")
+                      f.write("### ⚡ Low-Latency RDP Session Active\n\n")
                       f.write(f"* **Address:** `{address}`\n")
                       f.write("* **Username:** `TitanAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
