@@ -1,4 +1,4 @@
-name: Windows RDP Session Simple
+name: Windows RDP Playit Session
 
 on:
   workflow_dispatch:
@@ -12,15 +12,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. إنشاء المستخدم ومنح الصلاحيات
+      # 1. إنشاء مستخدم RDP مخصص
       - name: Create Dedicated RDP User
+        shell: powershell
         run: |
           net user rdpuser Password1234! /add
           net localgroup Administrators rdpuser /add
           net localgroup "Remote Desktop Users" rdpuser /add
 
-      # 2. إعدادات الجدار الناري والتوافق الكامل مع Windows 7
+      # 2. إعدادات الأمان والتوافق مع Windows 7
       - name: Fix RDP Settings
+        shell: powershell
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
@@ -29,46 +31,57 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تشغيل النفق المباشر واستخراج العنوان فوراً
-      - name: Start Tunnel & Display Info
+      # 3. تثبيت وتشغيل Playit CLI
+      - name: Setup and Run Playit
+        shell: powershell
+        env:
+          PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
         run: |
-          # تشغيل اتصال النفق المباشر في الخلفية
-          $job = Start-Job -ScriptBlock { 
-              ssh -p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o TCPKeepAlive=yes a.pinggy.io 
-          }
+          Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-win_amd64-0.15.26.exe" -OutFile "playit.exe"
           
-          Start-Sleep -Seconds 8
-          $output = Receive-Job -Job $job
-          $fullText = $output | Out-String
-          
-          # استخراج عنوان الاتصال تلقائياً
-          $rdpAddress = $null
-          if ($fullText -match 'tcp://([a-zA-Z0-9\.\-]+:[0-9]+)') {
-              $rdpAddress = $matches[1]
-          }
-
-          if ($rdpAddress) {
-              $Line1 = "### 🖥️ RDP Connection Info"
-              $Line2 = "* **Address:** `$rdpAddress`"
-              $Line3 = "* **Username:** `rdpuser`"
-              $Line4 = "* **Password:** `Password1234!`"
-              Set-Content -Path $env:GITHUB_STEP_SUMMARY -Value @($Line1, $Line2, $Line3, $Line4)
-              
-              Write-Host "==================================================" -ForegroundColor Green
-              Write-Host " [!] Address  : $rdpAddress" -ForegroundColor Yellow
-              Write-Host " [!] Username : rdpuser" -ForegroundColor Yellow
-              Write-Host " [!] Password : Password1234!" -ForegroundColor Yellow
-              Write-Host "==================================================" -ForegroundColor Green
+          if ($env:PLAYIT_SECRET_KEY) {
+              Write-Host "Starting Playit with Secret Key..." -ForegroundColor Green
+              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
           } else {
-              Write-Host "Output Dump:" -ForegroundColor Cyan
-              Write-Host $fullText
+              Write-Host "Extracting Claim URL..." -ForegroundColor Yellow
+              $proc = Start-Process -FilePath ".\playit.exe" -RedirectStandardOutput "playit_out.log" -RedirectStandardError "playit_err.log" -PassThru
+              
+              $claimUrl = $null
+              for ($i = 0; $i -lt 10; $i++) {
+                  Start-Sleep -Seconds 2
+                  if (Test-Path "playit_out.log") {
+                      $text = Get-Content "playit_out.log" -Raw
+                      if ($text -match "https://playit\.gg/claim/\S+") {
+                          $claimUrl = $matches[0]
+                          break
+                      }
+                  }
+              }
+
+              if ($claimUrl) {
+                  Write-Host "==================================================" -ForegroundColor Green
+                  Write-Host "CLAIM URL: $claimUrl" -ForegroundColor Yellow
+                  Write-Host "==================================================" -ForegroundColor Green
+                  
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Playit Claim URL"
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Open this link: $claimUrl"
+              } else {
+                  if (Test-Path "playit_out.log") { Get-Content "playit_out.log" }
+                  if (Test-Path "playit_err.log") { Get-Content "playit_err.log" }
+              }
           }
 
-      # 4. إبقاء الجلسة نشطة
+      # 4. إبقاء الجلسة تعمل
       - name: Keep Alive Loop
+        shell: powershell
         run: |
           $i = 0
           while ($i -lt 320) {
               Start-Sleep -Seconds 60
               $i++
+              if (-not (Get-Process -Name "playit" -ErrorAction SilentlyContinue)) {
+                  if ($env:PLAYIT_SECRET_KEY) {
+                      Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
+                  }
+              }
           }
