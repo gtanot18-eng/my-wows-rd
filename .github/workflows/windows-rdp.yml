@@ -1,4 +1,4 @@
-name: Bore Ultra-Fast RDP 2026
+name: Ultimate Stable RDP 2026
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 1. Create Dedicated RDP User
+      # 1. إنشاء المستخدم ومنح الصلاحيات
       - name: Initialize RDP User
         shell: powershell
         run: |
@@ -20,8 +20,8 @@ jobs:
           net localgroup Administrators TitanAdmin /add
           net localgroup "Remote Desktop Users" TitanAdmin /add
 
-      # 2. Configure RDP Security and 60 FPS Tweaks
-      - name: Configure Low-Latency RDP
+      # 2. ضبط توافق كامل مع عميل Windows 7 وتجاوز NLA
+      - name: Configure Windows 7 RDP Compatibility
         shell: powershell
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
@@ -30,52 +30,46 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
           
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
-
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. Launch Bore TCP Engine
-      - name: Launch Bore TCP Engine
+      # 3. تشغيل النفق المباشر عبر منفذ 443 المشفر
+      - name: Launch Port-443 Tunnel
         shell: powershell
         run: |
-          curl.exe -L -o bore.zip https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip
-          tar.exe -xf bore.zip
+          $process = Start-Process -FilePath "ssh" -ArgumentList "-p 443", "-R0:localhost:3389", "-o StrictHostKeyChecking=no", "-o ServerAliveInterval=15", "-o TCPKeepAlive=yes", "a.pinggy.io", "b" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
 
-          $proc = Start-Process -FilePath .\bore.exe -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput bore.log -RedirectStandardError bore_err.log -PassThru
-
-          $assignedPort = $null
+          $rdpAddress = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
-              if (Test-Path bore.log) {
-                  $logContent = Get-Content bore.log -Raw
-                  if ($logContent -match "listening at bore\.pub:(\d+)") {
-                      $assignedPort = $matches[1]
+              if (Test-Path "tunnel.log") {
+                  $content = Get-Content "tunnel.log" -Raw
+                  if ($content -match "tcp://(\S+)") {
+                      $rdpAddress = $matches[1]
                       break
                   }
               }
           }
 
-          if ($assignedPort) {
-              $fullAddress = "bore.pub:$assignedPort"
+          if ($rdpAddress) {
               Write-Host "=========================================================="
-              Write-Host "BORE RDP READY: $fullAddress"
-              Write-Host "Username      : TitanAdmin"
-              Write-Host "Password      : P@ssw0rd2026!"
+              Write-Host "RDP CONNECT ADDRESS: $rdpAddress"
+              Write-Host "Username           : TitanAdmin"
+              Write-Host "Password           : P@ssw0rd2026!"
               Write-Host "=========================================================="
 
               "### RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* Address: $fullAddress" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* Username: TitanAdmin" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              "* Password: P@ssw0rd2026!" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* **Computer / Address:** \`$rdpAddress\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* **Username:** \`TitanAdmin\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* **Password:** \`P@ssw0rd2026!\`" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           } else {
-              Write-Host "Bore failed to bind port. Log Dump:"
-              if (Test-Path bore.log) { Get-Content bore.log }
-              if (Test-Path bore_err.log) { Get-Content bore_err.log }
+              Write-Host "Failed to extract tunnel URL. Logs:"
+              if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
+              if (Test-Path "tunnel_err.log") { Get-Content "tunnel_err.log" }
               exit 1
           }
 
-      # 4. Keep Alive Loop
+      # 4. الحفاظ على استمرار الجلسة
       - name: Keep Alive Loop
         shell: powershell
         run: |
