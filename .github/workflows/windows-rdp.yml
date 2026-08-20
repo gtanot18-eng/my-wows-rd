@@ -5,7 +5,7 @@ on:
 
 jobs:
   macos-session:
-    runs-on: macos-13
+    runs-on: macos-latest
     timeout-minutes: 350
 
     steps:
