@@ -19,84 +19,58 @@ jobs:
           net localgroup Administrators rdpuser /add
           net localgroup "Remote Desktop Users" rdpuser /add
 
-      # 2. تثبيت Ngrok عبر Chocolatey
-      - name: Install Ngrok
-        run: |
-          choco install ngrok -y
-
-      # 3. إدخال التوكن الخاص بـ Ngrok
-      - name: Authenticate Ngrok
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        run: |
-          ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
-
-      # 4. إعدادات الأمان والجدار الناري للـ RDP وإصلاح تعليق Securing Connection
+      # 2. إعدادات الأمان والجدار الناري للـ RDP والتوافق مع Windows 7
       - name: Fix RDP Security & Firewall
         run: |
           # تفعيل الاتصالات البعيدة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           
-          # تعطيل NLA وإجبار استخدام Standard RDP Security
+          # إعدادات الأمان والتشفير المتوافقة مع الأنظمة القديمة
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
           
-          # إيقاف UDP للـ RDP ليعمل عبر TCP فقط مع Ngrok
-          New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "fClientDisableUDP" -PropertyType DWORD -Value 1 -Force
-
           # فتح جميع قواعد الجدار الناري الخاصة بـ RDP
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           
-          # تحسين الأداء
+          # تحسين الأداء الرسومي
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
-
-      # 5. تشغيل Ngrok وجلب رابط الاتصال (تم حل خطأ السلسلة النصية)
-      - name: Start Ngrok & Display Address
-        run: |
-          Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
           
-          $maxRetries = 10
-          $retryCount = 0
-          $PublicUrl = $null
+          # إعادة تشغيل خدمة RDP لتطبيق التعديلات
+          Restart-Service -Name TermService -Force
 
-          while (-not $PublicUrl -and $retryCount -lt $maxRetries) {
-              Start-Sleep -Seconds 3
-              try {
-                  $TunnelInfo = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
-                  $PublicUrl = $TunnelInfo.tunnels[0].public_url -replace "tcp://", ""
-              } catch {
-                  $retryCount++
-              }
-          }
-
-          if ($PublicUrl) {
-              # كتابة بيانات الاتصال في Summary بأسلوب متوافق تماماً مع PowerShell
-              $Line1 = "### 🖥️ RDP Connection Info"
-              $Line2 = "* **Address:** $PublicUrl"
-              $Line3 = "* **Username:** rdpuser"
-              $Line4 = "* **Password:** Password1234!"
-              
-              Set-Content -Path $env:GITHUB_STEP_SUMMARY -Value @($Line1, $Line2, $Line3, $Line4)
-
+      # 3. تثبيت وتشغيل Playit.gg
+      - name: Install & Run Playit.gg
+        env:
+          PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe" -OutFile "playit.exe"
+          
+          if ($env:PLAYIT_SECRET_KEY) {
+              # تشغيل البرنامج باستخدام الـ Secret Key في الخلفية
+              Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
               Write-Host "==================================================" -ForegroundColor Green
-              Write-Host " [!] انسخ العنوان التالي مباشرة لبرنامج RDP:" -ForegroundColor Cyan
-              Write-Host " Address  : $PublicUrl" -ForegroundColor Yellow
+              Write-Host " [!] Playit.gg is running with your Secret Key" -ForegroundColor Cyan
               Write-Host " Username : rdpuser" -ForegroundColor Yellow
               Write-Host " Password : Password1234!" -ForegroundColor Yellow
+              Write-Host " Connection Address: Use your static domain from Playit dashboard" -ForegroundColor Yellow
               Write-Host "==================================================" -ForegroundColor Green
           } else {
-              Write-Host "فشل الاتصال بـ Ngrok، يرجى التأكد من التوكن" -ForegroundColor Red
-              exit 1
+              # تشغيل تفاعلي لجلب Claim Code في حال عدم وجود Secret Key
+              Write-Host "[!] PLAYIT_SECRET_KEY not found. Running setup to get Claim Code..." -ForegroundColor Yellow
+              .\playit.exe
           }
 
-      # 6. حلقة الإبقاء يعمل
+      # 4. حلقة الإبقاء يعمل (Keep Alive Loop)
       - name: Keep Alive Loop
         run: |
           $i = 0
           while ($i -lt 320) {
               Start-Sleep -Seconds 60
               $i++
-              if (-not (Get-Process -Name "ngrok" -ErrorAction SilentlyContinue)) {
-                  Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389"
+              if (-not (Get-Process -Name "playit" -ErrorAction SilentlyContinue)) {
+                  if ($env:PLAYIT_SECRET_KEY) {
+                      Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret", "$env:PLAYIT_SECRET_KEY"
+                  }
               }
           }
