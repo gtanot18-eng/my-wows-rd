@@ -1,4 +1,0 @@
-- name: Generate Playit Claim Code
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe" -OutFile "playit.exe"
-          .\playit.exe
