@@ -1,0 +1,105 @@
+name: macOS Cloud Session 2026
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos-session:
+    runs-on: macos-13
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. إنشاء حساب مستخدم بصلاحيات كاملة وتفعيل VNC / Screen Sharing
+      - name: Configure macOS Screen Sharing & User
+        run: |
+          sudo dscl . -create /Users/macadmin
+          sudo dscl . -create /Users/macadmin UserShell /bin/zsh
+          sudo dscl . -create /Users/macadmin RealName "Mac Administrator"
+          sudo dscl . -create /Users/macadmin UniqueID "502"
+          sudo dscl . -create /Users/macadmin PrimaryGroupID 20
+          sudo dscl . -create /Users/macadmin NFSHomeDirectory /Users/macadmin
+          sudo dscl . -passwd /Users/macadmin "Matrix#2026!"
+          sudo dscl . -append /Groups/admin GroupMembership macadmin
+
+          # تفعيل Screen Sharing (VNC) على المنفذ 5900
+          sudo defaults write /var/db/launchd.db/com.apple.launchd/overrides.plist com.apple.screensharing -dict Disabled -bool false
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
+
+      # 2. تشغيل نفق TCP بنواة Python لربط منفذ 5900
+      - name: Launch macOS TCP Tunnel
+        run: |
+          python3 -u - << 'EOF'
+          import subprocess
+          import time
+          import re
+          import os
+          import sys
+
+          def start_tunnel():
+              print("[*] Spawning Raw TCP Tunnel for macOS VNC (Port 5900)...")
+              ssh_cmd = [
+                  "ssh",
+                  "-T",
+                  "-p", "443",
+                  "-R", "0:localhost:5900",
+                  "-o", "StrictHostKeyChecking=no",
+                  "-o", "ServerAliveInterval=15",
+                  "-o", "TCPKeepAlive=yes",
+                  "tcp@a.pinggy.io"
+              ]
+              proc = subprocess.Popen(
+                  ssh_cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  bufsize=1
+              )
+              
+              vnc_address = None
+              start_time = time.time()
+              while time.time() - start_time < 30:
+                  line = proc.stdout.readline()
+                  if not line:
+                      continue
+                  clean_line = line.strip()
+                  print(f"[Stream] {clean_line}")
+                  match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+                  if match:
+                      vnc_address = match.group(1)
+                      break
+              return proc, vnc_address
+
+          proc, address = start_tunnel()
+
+          if address:
+              print("\n" + "=" * 58)
+              print("[+] MACOS CLOUD SESSION READY")
+              print(f" VNC Address : {address}")
+              print(" Username    : macadmin")
+              print(" Password    : Matrix#2026!")
+              print("=" * 58 + "\n")
+
+              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_file:
+                  with open(summary_file, "a", encoding="utf-8") as f:
+                      f.write("### 🍏 macOS Cloud Session (Screen Sharing)\n\n")
+                      f.write(f"* **VNC / Address:** `{address}`\n")
+                      f.write("* **Username:** `macadmin`\n")
+                      f.write("* **Password:** `Matrix#2026!`\n")
+
+              minutes = 0
+              while minutes < 340:
+                  time.sleep(60)
+                  minutes += 1
+                  if proc.poll() is not None:
+                      print("[!] Tunnel closed. Restarting engine...")
+                      proc, address = start_tunnel()
+                      if address:
+                          print(f"[+] New Reconnect Address: {address}")
+          else:
+              print("[!] Failed to obtain TCP tunnel endpoint.")
+              sys.exit(1)
+          EOF
