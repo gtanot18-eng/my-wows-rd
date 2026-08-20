@@ -31,13 +31,16 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 3. تثبيت وتشغيل Playit CLI
+      # 3. تثبيت وتشغيل Playit باستخدام curl لتفادي انقطاع التحميل
       - name: Setup and Run Playit
         shell: powershell
         env:
           PLAYIT_SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
         run: |
-          Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-win_amd64-0.15.26.exe" -OutFile "playit.exe"
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          
+          # التحميل عبر curl المدمج مع إعادة المحاولة تلقائياً
+          curl.exe -L --retry 5 --retry-delay 2 "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-win_amd64-0.15.26.exe" -o "playit.exe"
           
           if ($env:PLAYIT_SECRET_KEY) {
               Write-Host "Starting Playit with Secret Key..." -ForegroundColor Green
@@ -47,7 +50,7 @@ jobs:
               $proc = Start-Process -FilePath ".\playit.exe" -RedirectStandardOutput "playit_out.log" -RedirectStandardError "playit_err.log" -PassThru
               
               $claimUrl = $null
-              for ($i = 0; $i -lt 10; $i++) {
+              for ($i = 0; $i -lt 12; $i++) {
                   Start-Sleep -Seconds 2
                   if (Test-Path "playit_out.log") {
                       $text = Get-Content "playit_out.log" -Raw
