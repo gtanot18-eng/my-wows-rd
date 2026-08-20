@@ -31,7 +31,7 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP ذكي مع مراقبة حية
+      # 2. تشغيل نفق TCP ذكي
       - name: Launch Smart Tunnel Engine
         shell: bash
         run: |
@@ -80,7 +80,7 @@ jobs:
 
           if address:
               print("\n" + "=" * 58)
-              print(" [✓] TITAN RDP ACTIVE & READY")
+              print("[+] TITAN RDP ACTIVE & READY")
               print(f" Address  : {address}")
               print(" Username : TitanAdmin")
               print(" Password : Matrix#2026!")
@@ -89,8 +89,8 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🖥️ Titan RDP Session Active (60 FPS)\n\n")
-                      f.write(f"* **Computer / Address:** `{address}`\n")
+                      f.write("### RDP Session Active (60 FPS)\n\n")
+                      f.write(f"* **Address:** `{address}`\n")
                       f.write("* **Username:** `TitanAdmin`\n")
                       f.write("* **Password:** `Matrix#2026!`\n")
 
@@ -103,7 +103,7 @@ jobs:
                       print("[!] Tunnel closed. Restarting engine...")
                       proc, address = start_tunnel()
                       if address:
-                          print(f"[✓] New Reconnect Address: {address}")
+                          print(f"[+] New Reconnect Address: {address}")
           else:
               print("[!] Failed to obtain TCP tunnel endpoint.")
               sys.exit(1)
