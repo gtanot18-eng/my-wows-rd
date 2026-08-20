@@ -12,24 +12,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة شاشة وهمية وتفعيل الدخول التلقائي للواجهة الرسومية
-      - name: Setup Headless macOS Desktop & VNC
+      # 1. تهيئة الشاشة الافتراضية وتفعيل جلسة VNC الرسومية
+      - name: Configure macOS GUI & VNC Server
         run: |
-          # تثبيت أدوات إنشاء الشاشة والتحكم الرسومي
-          brew install tiger-vnc
+          # إضافة مسارات Homebrew على معالجات Apple Silicon
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 
-          # إعداد مجلد وكلمة مرور VNC
-          mkdir -p ~/.vnc
-          echo "Matrix2026" | vncpasswd -f > ~/.vnc/passwd
-          chmod 600 ~/.vnc/passwd
+          # تفعيل خدمة مشاركة الشاشة الرسمية وضبط صلاحيات الواجهة
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -setvncpw -vncpw "Matrix2026" \
+            -restart -agent
 
-          # إجبار macOS على تشغيل واجهة المستخدم الرسومية بدون قفل
+          # إجبار النظام على تنشيط نافذة سطح المكتب وتخطي وضع الخمول
           sudo defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser "runner"
+          caffeinate -d -i -m -u &
 
-          # تشغيل خادم VNC بدقة 1080p على المنفذ 5901
-          vncserver :1 -geometry 1920x1080 -depth 24 -localhost no
-
-      # 2. تشغيل نفق TCP بنواة Python لربط منفذ الشاشة 5901
+      # 2. إطلاق نفق TCP بنواة Python لربط منفذ VNC (5900)
       - name: Launch macOS TCP Tunnel
         run: |
           python3 -u - << 'EOF'
@@ -40,12 +40,12 @@ jobs:
           import sys
 
           def start_tunnel():
-              print("[*] Spawning Raw TCP Tunnel for macOS Display (Port 5901)...")
+              print("[*] Spawning Raw TCP Tunnel for macOS GUI (Port 5900)...")
               ssh_cmd = [
                   "ssh",
                   "-T",
                   "-p", "443",
-                  "-R", "0:localhost:5901",
+                  "-R", "0:localhost:5900",
                   "-o", "StrictHostKeyChecking=no",
                   "-o", "ServerAliveInterval=15",
                   "-o", "TCPKeepAlive=yes",
@@ -77,7 +77,7 @@ jobs:
 
           if address:
               print("\n" + "=" * 58)
-              print("[+] MACOS DESKTOP READY")
+              print("[+] MACOS CLOUD DESKTOP ACTIVE")
               print(f" VNC Address  : {address}")
               print(" VNC Password : Matrix2026")
               print("=" * 58 + "\n")
@@ -85,7 +85,7 @@ jobs:
               summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
               if summary_file:
                   with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### 🍏 macOS Desktop Active (1080p)\n\n")
+                      f.write("### 🍏 macOS Cloud Desktop Active\n\n")
                       f.write(f"* **VNC Server / Address:** `{address}`\n")
                       f.write("* **VNC Password:** `Matrix2026`\n")
 
