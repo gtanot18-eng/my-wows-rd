@@ -35,17 +35,14 @@ jobs:
       - name: Start TCP Tunnel
         shell: powershell
         run: |
-          # تحميل الأداة الرسمية
-          curl.exe -L -o loclx.exe "https://api.localxpose.io/api/v2/downloads/loclx-windows-amd64.exe"
-          
-          # تشغيل النفق
-          $proc = Start-Process -FilePath ".\loclx.exe" -ArgumentList "tunnel", "tcp", "--to", "127.0.0.1:3389" -RedirectStandardOutput "loclx.log" -RedirectStandardError "loclx_err.log" -PassThru
+          curl.exe -L -o loclx.exe https://api.localxpose.io/api/v2/downloads/loclx-windows-amd64.exe
+          $proc = Start-Process -FilePath .\loclx.exe -ArgumentList "tunnel","tcp","--to","127.0.0.1:3389" -RedirectStandardOutput loclx.log -RedirectStandardError loclx_err.log -PassThru
 
           $rdpAddress = $null
           for ($i = 0; $i -lt 15; $i++) {
               Start-Sleep -Seconds 2
-              if (Test-Path "loclx.log") {
-                  $content = Get-Content "loclx.log" -Raw
+              if (Test-Path loclx.log) {
+                  $content = Get-Content loclx.log -Raw
                   if ($content -match "([a-zA-Z0-9\.\-]+\.loclx\.io:[0-9]+)") {
                       $rdpAddress = $matches[1]
                       break
@@ -54,19 +51,19 @@ jobs:
           }
 
           if ($rdpAddress) {
-              Write-Host "==================================================" -ForegroundColor Green
-              Write-Host " [!] Address  : $rdpAddress" -ForegroundColor Yellow
-              Write-Host " [!] Username : rdpuser" -ForegroundColor Yellow
-              Write-Host " [!] Password : Password1234!" -ForegroundColor Yellow
-              Write-Host "==================================================" -ForegroundColor Green
+              Write-Host "=================================================="
+              Write-Host "Address  : $rdpAddress"
+              Write-Host "Username : rdpuser"
+              Write-Host "Password : Password1234!"
+              Write-Host "=================================================="
 
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### 🖥️ RDP Connection Info"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Address:** `$rdpAddress`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `rdpuser`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `Password1234!`"
+              "### RDP Connection Info" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Address: $rdpAddress" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Username: rdpuser" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              "* Password: Password1234!" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           } else {
-              if (Test-Path "loclx.log") { Get-Content "loclx.log" }
-              if (Test-Path "loclx_err.log") { Get-Content "loclx_err.log" }
+              if (Test-Path loclx.log) { Get-Content loclx.log }
+              if (Test-Path loclx_err.log) { Get-Content loclx_err.log }
           }
 
       # 4. إبقاء الجلسة تعمل
