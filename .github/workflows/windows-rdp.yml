@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، المستخدم، وتحسينات الاستجابة الفائقة
+      # 1. تهيئة النظام، المستخدم، وتعديلات الأداء
       - name: System & Network Low-Latency Tuning
         shell: powershell
         run: |
@@ -28,60 +28,70 @@ jobs:
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0
-
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق Cloudflare TCP المباشر بدون قيود زمنية
+      # 2. تشغيل نفق Cloudflare بنواة Python لتفادي أخطاء الصياغة
       - name: Launch Cloudflare TCP Engine
-        shell: powershell
+        shell: bash
         run: |
-          # تحميل أداة Cloudflared الرسمية لويندوز
-          curl.exe -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+          python -u - << 'EOF'
+          import subprocess
+          import time
+          import re
+          import os
+          import sys
+          import urllib.request
 
-          # تشغيل النفق وتوجيه مخرجاته لملف السجل
-          $proc = Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel","--url","tcp://localhost:3389" -RedirectStandardError "cf.log" -PassThru
+          print("[*] Downloading Official Cloudflared Engine...")
+          cf_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+          urllib.request.urlretrieve(cf_url, "cloudflared.exe")
 
-          $rdpAddress = $null
-          for ($i = 0; $i -lt 20; $i++) {
-              Start-Sleep -Seconds 2
-              if (Test-Path "cf.log") {
-                  $content = Get-Content "cf.log" -Raw
-                  if ($content -match "https://([a-zA-Z0-9\-]+\.trycloudflare\.com)") {
-                      $rdpAddress = $matches[1]
-                      break
-                  }
-              }
-          }
+          print("[*] Launching Cloudflare Tunnel...")
+          proc = subprocess.Popen(
+              ["./cloudflared.exe", "tunnel", "--url", "tcp://localhost:3389"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              bufsize=1
+          )
 
-          if ($rdpAddress) {
-              Write-Host "==========================================================" -ForegroundColor Green
-              Write-Host "[+] CLOUDFLARE RDP ENGINE ACTIVE & CONNECTED" -ForegroundColor Cyan
-              Write-Host " Hostname : $rdpAddress" -ForegroundColor Yellow
-              Write-Host " Username : TitanAdmin" -ForegroundColor Yellow
-              Write-Host " Password : Matrix#2026!" -ForegroundColor Yellow
-              Write-Host " Limit    : Unlimited (Full 350 Minutes Session)" -ForegroundColor Green
-              Write-Host "==========================================================" -ForegroundColor Green
+          rdp_host = None
+          start_time = time.time()
 
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ⚡ Cloudflare Ultra-Fast RDP (No 60m Limit)"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Host:** `$rdpAddress`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Username:** `TitanAdmin`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Password:** `Matrix#2026!`"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "* **Access Mode:** High-Speed Anycast Cloudflare Network"
-          } else {
-              Write-Host "[!] Failed to launch Cloudflared. Log Output:" -ForegroundColor Red
-              if (Test-Path "cf.log") { Get-Content "cf.log" }
-              exit 1
-          }
+          while time.time() - start_time < 45:
+              line = proc.stdout.readline()
+              if not line:
+                  continue
+              clean_line = line.strip()
+              print(f"[Cloudflare] {clean_line}")
 
-      # 3. الحفاظ على استمرار الجلسة حتى نهاية الوقت
-      - name: Keep Alive Loop
-        shell: powershell
-        run: |
-          $minutes = 0
-          while ($minutes -lt 340) {
-              Start-Sleep -Seconds 60
-              $minutes++
-          }
+              match = re.search(r"https://([a-zA-Z0-9\-]+\.trycloudflare\.com)", clean_line)
+              if match:
+                  rdp_host = match.group(1)
+                  break
+
+          if rdp_host:
+              print("\n" + "=" * 60)
+              print("[+] CLOUDFLARE RDP ENGINE READY (NO TIME LIMIT)")
+              print(f" Hostname : {rdp_host}")
+              print(" Username : TitanAdmin")
+              print(" Password : Matrix#2026!")
+              print("=" * 60 + "\n")
+
+              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_file:
+                  with open(summary_file, "a", encoding="utf-8") as f:
+                      f.write("### Cloudflare Ultra-Fast RDP\n\n")
+                      f.write(f"* **Host:** {rdp_host}\n")
+                      f.write("* **Username:** TitanAdmin\n")
+                      f.write("* **Password:** Matrix#2026!\n")
+
+              minutes = 0
+              while minutes < 340 and proc.poll() is None:
+                  time.sleep(60)
+                  minutes += 1
+          else:
+              print("[!] Failed to obtain Cloudflare tunnel URL.")
+              sys.exit(1)
+          EOF
