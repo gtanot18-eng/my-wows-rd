@@ -23,7 +23,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup "Remote Desktop Users" runneradmin /add
 
-          # تفعيل RDP وإلغاء NLA والتشفير المقيد
+          # تفعيل RDP وإلغاء NLA والتشفير المقيد للتوافق مع Windows 7
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
@@ -36,7 +36,7 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP مع نظام منع السقوط وإعادة التوصيل الفوري
+      # 2. تشغيل نفق TCP بنظام التجديد التلقائي وترميز نصي متوافق
       - name: Launch Persistent Tunnel Watchdog
         shell: bash
         run: |
@@ -47,11 +47,15 @@ jobs:
           import os
           import sys
 
+          # فرض ترميز UTF-8 لمنع أخطاء الطباعة
+          if hasattr(sys.stdout, 'reconfigure'):
+              sys.stdout.reconfigure(encoding='utf-8')
+
           max_duration_minutes = 345
           start_global = time.time()
 
           def launch_tunnel():
-              print("\n[*] Initializing High-Priority Keep-Alive Tunnel...")
+              print("\n[*] Initializing Keep-Alive Tunnel...")
               cmd = [
                   "ssh",
                   "-T",
@@ -68,7 +72,9 @@ jobs:
                   stdout=subprocess.PIPE,
                   stderr=subprocess.STDOUT,
                   text=True,
-                  bufsize=1
+                  bufsize=1,
+                  encoding='utf-8',
+                  errors='replace'
               )
 
           while (time.time() - start_global) / 60 < max_duration_minutes:
@@ -76,7 +82,6 @@ jobs:
               rdp_address = None
               tunnel_start = time.time()
 
-              # قراءة المخرجات واستخراج العنوان
               while time.time() - tunnel_start < 25:
                   line = proc.stdout.readline()
                   if not line:
@@ -90,16 +95,16 @@ jobs:
 
               if rdp_address:
                   print("\n" + "=" * 60)
-                  print("🎉 RDP IS READY & CONNECTED!")
-                  print(f"👉 Computer / Address : {rdp_address}")
-                  print("👉 Username           : runneradmin")
-                  print("👉 Password           : Matrix2026Pass")
+                  print("[+] RDP SESSION READY & ACTIVE")
+                  print(f" Computer / Address : {rdp_address}")
+                  print(" Username           : runneradmin")
+                  print(" Password           : Matrix2026Pass")
                   print("=" * 60 + "\n")
 
                   summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
                   if summary_file:
                       with open(summary_file, "w", encoding="utf-8") as f:
-                          f.write("### ⚡ Active Windows RDP Session\n\n")
+                          f.write("### Active Windows RDP Session\n\n")
                           f.write(f"* **Computer:** `{rdp_address}`\n")
                           f.write("* **Username:** `runneradmin`\n")
                           f.write("* **Password:** `Matrix2026Pass`\n")
@@ -111,9 +116,9 @@ jobs:
                           print(f"[Keep-Alive] {line.strip()}")
                       time.sleep(1)
 
-                  print("[!] Tunnel connection dropped. Auto-reconnecting in 3 seconds...")
+                  print("[!] Tunnel disconnected. Reconnecting automatically in 3 seconds...")
               else:
-                  print("[!] Failed to parse endpoint. Retrying in 5 seconds...")
+                  print("[!] Endpoint parsing retry in 5 seconds...")
 
               try:
                   proc.kill()
