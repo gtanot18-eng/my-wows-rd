@@ -1,4 +1,4 @@
-name: Free Windows RDP (No Credit Card)
+name: Stable Windows RDP 2026
 
 on:
   workflow_dispatch:
@@ -12,32 +12,32 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة صلاحيات الدخول وتوافق ويندوز 7
-      - name: Configure System & RDP
+      # 1. تهيئة النظام، المستخدم runneradmin وتوافق Windows 7
+      - name: Configure System & Windows 7 RDP
         shell: powershell
         run: |
           $ErrorActionPreference = "SilentlyContinue"
           
-          # تعيين كلمة المرور لحساب runneradmin
+          # تعيين كلمة المرور وتفعيل الصلاحيات
           net user runneradmin Matrix2026Pass
           net localgroup Administrators runneradmin /add
           net localgroup "Remote Desktop Users" runneradmin /add
 
-          # إلغاء NLA وتخفيض مستوى التشفير ليعمل مع mstsc على Windows 7
+          # تفعيل RDP وإلغاء NLA والتشفير المقيد
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
 
-          # ضبط الأداء وسرعة الاستجابة 60 FPS
+          # تسريع إطارات الشاشة 60 FPS
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP مباشر بدون بطاقة بنكية
-      - name: Launch Free Direct TCP Tunnel
+      # 2. تشغيل نفق TCP مع نظام منع السقوط وإعادة التوصيل الفوري
+      - name: Launch Persistent Tunnel Watchdog
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -47,62 +47,79 @@ jobs:
           import os
           import sys
 
-          print("[*] Starting Free Pinggy TCP Tunnel on port 3389...")
-          ssh_cmd = [
-              "ssh",
-              "-T",
-              "-p", "443",
-              "-R", "0:localhost:3389",
-              "-o", "StrictHostKeyChecking=no",
-              "-o", "ServerAliveInterval=15",
-              "-o", "TCPKeepAlive=yes",
-              "tcp@a.pinggy.io"
-          ]
+          max_duration_minutes = 345
+          start_global = time.time()
 
-          proc = subprocess.Popen(
-              ssh_cmd,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1
-          )
+          def launch_tunnel():
+              print("\n[*] Initializing High-Priority Keep-Alive Tunnel...")
+              cmd = [
+                  "ssh",
+                  "-T",
+                  "-p", "443",
+                  "-R", "0:localhost:3389",
+                  "-o", "StrictHostKeyChecking=no",
+                  "-o", "ServerAliveInterval=5",
+                  "-o", "ServerAliveCountMax=60",
+                  "-o", "TCPKeepAlive=yes",
+                  "tcp@a.pinggy.io"
+              ]
+              return subprocess.Popen(
+                  cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  bufsize=1
+              )
 
-          rdp_address = None
-          start_time = time.time()
+          while (time.time() - start_global) / 60 < max_duration_minutes:
+              proc = launch_tunnel()
+              rdp_address = None
+              tunnel_start = time.time()
 
-          while time.time() - start_time < 30:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              clean_line = line.strip()
-              print(f"[Tunnel Stream] {clean_line}")
+              # قراءة المخرجات واستخراج العنوان
+              while time.time() - tunnel_start < 25:
+                  line = proc.stdout.readline()
+                  if not line:
+                      continue
+                  clean_line = line.strip()
+                  print(f"[Engine] {clean_line}")
+                  match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
+                  if match:
+                      rdp_address = match.group(1)
+                      break
 
-              match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
-              if match:
-                  rdp_address = match.group(1)
-                  break
+              if rdp_address:
+                  print("\n" + "=" * 60)
+                  print("🎉 RDP IS READY & CONNECTED!")
+                  print(f"👉 Computer / Address : {rdp_address}")
+                  print("👉 Username           : runneradmin")
+                  print("👉 Password           : Matrix2026Pass")
+                  print("=" * 60 + "\n")
 
-          if rdp_address:
-              print("\n" + "=" * 60)
-              print("[+] RDP SESSION READY - NO CREDIT CARD REQUIRED")
-              print(f" Computer / Host : {rdp_address}")
-              print(" Username        : runneradmin")
-              print(" Password        : Matrix2026Pass")
-              print("=" * 60 + "\n")
+                  summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+                  if summary_file:
+                      with open(summary_file, "w", encoding="utf-8") as f:
+                          f.write("### ⚡ Active Windows RDP Session\n\n")
+                          f.write(f"* **Computer:** `{rdp_address}`\n")
+                          f.write("* **Username:** `runneradmin`\n")
+                          f.write("* **Password:** `Matrix2026Pass`\n")
 
-              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-              if summary_file:
-                  with open(summary_file, "w", encoding="utf-8") as f:
-                      f.write("### ⚡ Active Windows RDP Session\n\n")
-                      f.write(f"* **Computer:** `{rdp_address}`\n")
-                      f.write("* **Username:** `runneradmin`\n")
-                      f.write("* **Password:** `Matrix2026Pass`\n")
+                  # مراقبة الجلسة والطباعة المستمرة لمنع الإغلاق
+                  while proc.poll() is None and (time.time() - start_global) / 60 < max_duration_minutes:
+                      line = proc.stdout.readline()
+                      if line:
+                          print(f"[Keep-Alive] {line.strip()}")
+                      time.sleep(1)
 
-              minutes = 0
-              while minutes < 340 and proc.poll() is None:
-                  time.sleep(60)
-                  minutes += 1
-          else:
-              print("[!] Failed to obtain TCP tunnel endpoint.")
-              sys.exit(1)
+                  print("[!] Tunnel connection dropped. Auto-reconnecting in 3 seconds...")
+              else:
+                  print("[!] Failed to parse endpoint. Retrying in 5 seconds...")
+
+              try:
+                  proc.kill()
+              except:
+                  pass
+              time.sleep(3)
+
+          print("[*] Max session duration reached.")
           EOF
