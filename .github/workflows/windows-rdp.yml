@@ -1,20 +1,12 @@
-name: Titan Fast-Boot Ultra Enterprise Windows RDP 2026
+name: Looksmaxxing Ultra Edition Windows RDP 2026
 
 on:
   workflow_dispatch:
     inputs:
       rdp_password:
-        description: 'RDP Password (Default: half)'
+        description: 'RDP Password'
         required: true
         default: 'half'
-      enable_background_suite:
-        description: 'Deploy Desktop Suite & Tools in Background (Zero Boot Delay)'
-        type: boolean
-        default: true
-      enable_kernel_tweaks:
-        description: 'Enable 60 FPS, TCP NoDelay & Low Latency Kernel Tuning'
-        type: boolean
-        default: true
 
 jobs:
   rdp-deployment:
@@ -26,15 +18,15 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. الإقلاع الفوري: فك شروط الأمان، تهيئة الحساب، وتوافق Windows 7 (أقل من 5 ثوانٍ)
+      # 1. تهيئة الحساب السريعة وتجاوز قيود الأمان (كلمة المرور: half)
       # =========================================================================
-      - name: Stage 1 - Fast-Boot Security & User Provisioning
+      - name: Configure System & Windows 7 RDP
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 1.1 إلغاء شروط التعقيد لقبول كلمة المرور القصيرة (half)
+          # 1.1 فك تعقيد كلمة المرور
           $secCfg = Join-Path $env:TEMP "secpol.cfg"
           $secSdb = Join-Path $env:TEMP "secpol.sdb"
           secedit /export /cfg $secCfg /quiet
@@ -42,14 +34,12 @@ jobs:
               $content = Get-Content $secCfg
               $content = $content -replace "PasswordComplexity = 1", "PasswordComplexity = 0"
               $content = $content -replace "MinimumPasswordLength = \d+", "MinimumPasswordLength = 0"
-              $content = $content -replace "PasswordHistorySize = \d+", "PasswordHistorySize = 0"
-              $content = $content -replace "MinimumPasswordAge = \d+", "MinimumPasswordAge = 0"
               Set-Content -Path $secCfg -Value $content
               secedit /configure /db $secSdb /cfg $secCfg /areas SECURITYPOLICY /quiet
               Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
           }
 
-          # 1.2 تعيين كلمة المرور للمستخدم runneradmin
+          # 1.2 ضبط الحساب وتوافق Windows 7
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
@@ -57,7 +47,6 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير (Windows 7 Native Compatibility)
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -65,154 +54,83 @@ jobs:
           Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
           Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
 
-          # 1.4 تفعيل حزم TLS 1.0/1.1/1.2 لضمان اتصال عملاء Windows 7 القدامى
-          $Ciphers = @('TLS 1.0', 'TLS 1.1', 'TLS 1.2', 'SSL 3.0')
-          foreach ($c in $Ciphers) {
-              $srv = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$c\Server"
-              $cli = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$c\Client"
-              New-Item -Path $srv -Force | Out-Null
-              New-Item -Path $cli -Force | Out-Null
-              Set-ItemProperty -Path $srv -Name 'Enabled' -Value 1 -Force
-              Set-ItemProperty -Path $srv -Name 'DisabledByDefault' -Value 0 -Force
-              Set-ItemProperty -Path $cli -Name 'Enabled' -Value 1 -Force
-              Set-ItemProperty -Path $cli -Name 'DisabledByDefault' -Value 0 -Force
-          }
+          # 1.3 تسريع 60 FPS وTCP NoDelay
+          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
+          Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TCPNoDelay' -Value 1 -Type DWord -Force
+          Set-MpPreference -DisableRealtimeMonitoring $true
 
-          # 1.5 فتح المنافذ وإعادة تشغيل خدمة RDP
           Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
-          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
           Restart-Service -Name TermService -Force
 
       # =========================================================================
-      # 2. تحسينات الأداء، الرسوميات 60 FPS، وإلغاء القيود (لحظية في جزء من الثانية)
+      # 2. تطبيق ثيم Looksmaxxing وتحميل معرض صور PSL Gods على سطح المكتب
       # =========================================================================
-      - name: Stage 2 - 60 FPS DWM & Ultra-Low Latency Kernel Tweaks
-        if: ${{ github.event.inputs.enable_kernel_tweaks == 'true' }}
+      - name: Apply Looksmaxxing Theme & PSL Gods Archive
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 2.1 ضبط معدل الإطارات إلى 60 FPS وسرعة استجابة الشاشة (15ms Interval)
-          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
-          Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name 'VisualFXSetting' -Value 2 -Force
+          $DesktopPath = 'C:\Users\runneradmin\Desktop'
+          $PSLDir = Join-Path $DesktopPath 'PSL_Gods_Archive'
+          if (!(Test-Path $PSLDir)) { New-Item -Path $PSLDir -ItemType Directory -Force | Out-Null }
 
-          # 2.2 تحسين شبكة TCP وإلغاء خوارزمية Nagle (TCP NoDelay & Zero Jitter)
-          $Tcp = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
-          Set-ItemProperty -Path $Tcp -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path $Tcp -Name 'TCPNoDelay' -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path $Tcp -Name 'DefaultTTL' -Value 64 -Type DWord -Force
-
-          # 2.3 تحرير النطاق الترددي للشبكة وإلغاء اختناق وسائط النظام
-          $SysProfile = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
-          Set-ItemProperty -Path $SysProfile -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type DWord -Force
-          Set-ItemProperty -Path $SysProfile -Name 'SystemResponsiveness' -Value 0 -Type DWord -Force
-
-          # 2.4 إيقاف Windows Defender والـ Telemetry لتحرير 100% من المعالج والذاكرة
-          Set-MpPreference -DisableRealtimeMonitoring $true
-          Set-MpPreference -DisableBehaviorMonitoring $true
-          Set-MpPreference -DisableIOAVProtection $true
-          Set-MpPreference -DisableScriptScanning $true
-
-          $Services = @('DiagTrack', 'dmwappushservice', 'WerSvc', 'SysMain')
-          foreach ($s in $Services) {
-              Stop-Service -Name $s -Force
-              Set-Service -Name $s -StartupType Disabled
+          # 2.1 تحميل خلفيات وصور أيقونات PSL Gods (Chico, Sean O'Pry, Jordan Barrett, Gigachad)
+          $Images = @{
+              "Main_Wallpaper.jpg"   = "https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg"
+              "Chico_Lachowski.jpg"  = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg"
+              "Sean_OPry.jpg"        = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Sean_O%27Pry_2014.jpg/800px-Sean_O%27Pry_2014.jpg"
+              "Jordan_Barrett.jpg"   = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Jordan_Barrett_2017.jpg/800px-Jordan_Barrett_2017.jpg"
+              "Aesthetic_Statue.jpg" = "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1920&q=80"
           }
 
-          # 2.5 تفعيل الوضع الليلي وتوجيه الصوت الافتراضي
+          $Client = New-Object System.Net.WebClient
+          foreach ($img in $Images.Keys) {
+              $Target = Join-Path $PSLDir $img
+              try { $Client.DownloadFile($Images[$img], $Target) } catch {}
+          }
+
+          # 2.2 تعيين خلفية الشاشة الرسمية (Chiseled Aesthetic Wallpaper)
+          $WallpaperPath = Join-Path $PSLDir "Main_Wallpaper.jpg"
+          if (Test-Path $WallpaperPath) {
+              Add-Type -TypeDefinition @"
+              using System;
+              using System.Runtime.InteropServices;
+              public class WallpaperSetter {
+                  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+                  public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+              }
+  "@
+              [WallpaperSetter]::SystemParametersInfo(0x0014, 0, $WallpaperPath, 0x01 -bor 0x02) | Out-Null
+              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
+          }
+
+          # 2.3 تفعيل المظهر الداكن الحاد (Dark Slate Theme)
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'HideFileExt' -Value 0 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'Hidden' -Value 1 -Force
 
-          Set-Service -Name Audiosrv -StartupType Automatic
-          Start-Service -Name Audiosrv
-
-      # =========================================================================
-      # 3. توليد حزمة أدوات سطح المكتب المتقدمة (Desktop Power Suite)
-      # =========================================================================
-      - name: Stage 3 - Desktop Utilities Depot Deployment
-        if: ${{ github.event.inputs.enable_background_suite == 'true' }}
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          $Desktop = 'C:\Users\runneradmin\Desktop'
-          if (!(Test-Path $Desktop)) { New-Item -Path $Desktop -ItemType Directory -Force | Out-Null }
-
-          # 3.1 أداة تنظيف وتحرير الذاكرة الفورية (Memory Purger)
-          $RamCleaner = @'
-          Write-Host "==========================================" -ForegroundColor Magenta
-          Write-Host "       TITAN RAM & CACHE FLUSHER 2026     " -ForegroundColor Magenta
-          Write-Host "==========================================" -ForegroundColor Magenta
-          Write-Host "[*] Purging System Standby Cache..." -ForegroundColor Cyan
-          Clear-DnsClientCache
-          Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-          [System.GC]::Collect()
-          [System.GC]::WaitForPendingFinalizers()
-          Write-Host "[✓] System RAM and Cache Optimized!" -ForegroundColor Green
-          Start-Sleep -Seconds 2
-          '@
-          [System.IO.File]::WriteAllText((Join-Path $Desktop 'Clean_Memory.ps1'), $RamCleaner, [System.Text.Encoding]::UTF8)
-
-          # 3.2 أداة قياس سرعة الإنترنت المباشرة (Cloudflare Multi-Stream Benchmark)
-          $SpeedBenchmark = @'
-          Write-Host "==========================================" -ForegroundColor Yellow
-          Write-Host "       NETWORK THROUGHPUT BENCHMARK       " -ForegroundColor Yellow
-          Write-Host "==========================================" -ForegroundColor Yellow
-          Write-Host "[*] Measuring Download Bandwidth via Global Edge CDN..." -ForegroundColor Cyan
-          $url = "https://speed.cloudflare.com/__down?bytes=50000000"
-          $sw = [System.Diagnostics.Stopwatch]::StartNew()
-          (New-Object System.Net.WebClient).DownloadData($url) | Out-Null
-          $sw.Stop()
-          $mbps = [math]::Round((50 / $sw.Elapsed.TotalSeconds) * 8, 2)
-          Write-Host "[✓] Bandwidth Measured: $mbps Mbps" -ForegroundColor Green
-          Write-Host "Press any key to close..."
-          $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-          '@
-          [System.IO.File]::WriteAllText((Join-Path $Desktop 'Speed_Test.ps1'), $SpeedBenchmark, [System.Text.Encoding]::UTF8)
-
-          # 3.3 بطاقة معلومات العتاد ولوحة التحكم (Hardware Telemetry)
-          $HardwareCard = @'
-          Write-Host "==========================================" -ForegroundColor Green
-          Write-Host "       SYSTEM HARDWARE TELEMETRY          " -ForegroundColor Green
-          Write-Host "==========================================" -ForegroundColor Green
-          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture, TotalPhysicalMemory
+          # 2.4 سكريبت نصائح Looksmaxxing ومولد تقييم الملامح على سطح المكتب
+          $GuideScript = @'
+          Write-Host "==========================================================" -ForegroundColor Cyan
+          Write-Host "         LOOKSMAXXING / PSL GODS WORKSTATION 2026         " -ForegroundColor Yellow
+          Write-Host "==========================================================" -ForegroundColor Cyan
+          Write-Host "[★] Hunter Eyes Activated (Canthal Tilt Positive)" -ForegroundColor Green
+          Write-Host "[★] Bone Density & Angular Jawline Optimized" -ForegroundColor Green
+          Write-Host "[★] Lean Body Mass Target: 10-12% Bodyfat" -ForegroundColor Green
           Write-Host ""
-          Get-WmiObject Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
+          Write-Host "PSL Gods Gallery located in: Desktop\PSL_Gods_Archive" -ForegroundColor Magenta
+          Write-Host "==========================================================" -ForegroundColor Cyan
           Write-Host "Press any key to close..."
           $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
           '@
-          [System.IO.File]::WriteAllText((Join-Path $Desktop 'System_Info.ps1'), $HardwareCard, [System.Text.Encoding]::UTF8)
-
-          # 3.4 سكريبت تثبيت سريع لحزمة المتصفحات (Brave, Chrome, Firefox) بضغطة زر
-          $InstallBrowsers = @'
-          Write-Host "[*] Installing Brave, Chrome, and Firefox in Background..." -ForegroundColor Cyan
-          winget install --id Brave.Brave --silent --accept-source-agreements --accept-package-agreements
-          winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements
-          winget install --id Mozilla.Firefox --silent --accept-source-agreements --accept-package-agreements
-          Write-Host "[✓] Browsers Installed Successfully!" -ForegroundColor Green
-          Start-Sleep -Seconds 3
-          '@
-          [System.IO.File]::WriteAllText((Join-Path $Desktop 'Install_Browsers.ps1'), $InstallBrowsers, [System.Text.Encoding]::UTF8)
-
-          # 3.5 سكريبت تثبيت أدوات المطورين والتحميل السريع (VSCode, Git, Python, yt-dlp, 7zip)
-          $InstallDevTools = @'
-          Write-Host "[*] Installing Developer & Media Tools..." -ForegroundColor Cyan
-          winget install --id Microsoft.VisualStudioCode --silent --accept-source-agreements --accept-package-agreements
-          winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
-          winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
-          winget install --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements
-          Write-Host "[✓] Tools Installed Successfully!" -ForegroundColor Green
-          Start-Sleep -Seconds 3
-          '@
-          [System.IO.File]::WriteAllText((Join-Path $Desktop 'Install_DevTools.ps1'), $InstallDevTools, [System.Text.Encoding]::UTF8)
+          [System.IO.File]::WriteAllText((Join-Path $DesktopPath 'Looksmaxxing_Mantra.ps1'), $GuideScript, [System.Text.Encoding]::UTF8)
 
       # =========================================================================
-      # 4. محرك الأنفاق فائق السرعة والمراقبة الذكية (إطلاق فوري في أقل من 10 ثوانٍ)
+      # 3. إطلاق النفق الفوري والمراقبة الحية
       # =========================================================================
-      - name: Stage 4 - Launch Instant Multi-Tunnel Engine & Live Session Watchdog
+      - name: Launch High-Speed Direct Tunnel
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -230,7 +148,7 @@ jobs:
           password = "${{ github.event.inputs.rdp_password }}" or "half"
           rdp_address = None
 
-          print("[*] Launching Primary High-Speed TCP Engine (Pinggy Direct Stream)...")
+          print("[*] Launching Primary TCP Tunnel Engine (Pinggy Direct Stream)...")
           ssh_cmd = [
               "ssh",
               "-T",
@@ -254,7 +172,7 @@ jobs:
           )
 
           start_t = time.time()
-          while time.time() - start_t < 18:
+          while time.time() - start_t < 20:
               line = proc.stdout.readline()
               if not line:
                   continue
@@ -264,9 +182,9 @@ jobs:
                   rdp_address = match.group(1)
                   break
 
-          # نفق الطوارئ الاحتياطي الفوري في حال تأخر النفق الأساسي
+          # بديل Bore الاحتياطي
           if not rdp_address:
-              print("[!] Primary engine busy. Engaging Bore High-Speed Failover...")
+              print("[!] Switching to Bore Failover...")
               try:
                   url = "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip"
                   urllib.request.urlretrieve(url, "bore.zip")
@@ -292,44 +210,34 @@ jobs:
                           proc = bore_proc
                           break
               except Exception as e:
-                  print(f"[!] Bore fallback error: {e}")
+                  print(f"[!] Fallback error: {e}")
 
           if not rdp_address:
-              print("[X] Tunnel handshakes timed out.")
+              print("[X] Failed to establish tunnel.")
               sys.exit(1)
 
-          # طباعة بيانات الاتصال النظيفة
-          print("\n" + "=" * 62)
-          print("  🎉 TITAN ULTRA FAST-BOOT RDP SESSION IS ACTIVE & READY!")
-          print("=" * 62)
-          print(f"  👉 Computer / Host : {rdp_address}")
-          print("  👉 User Name       : runneradmin")
-          print(f"  👉 Password        : {password}")
-          print("  👉 Compatibility   : Full Windows 7, 8, 10, 11 Support")
-          print("  👉 Latency Engine  : 60 FPS DWM Acceleration (TCP NoDelay)")
-          print("  👉 Max Duration    : 6 Hours (360 Minutes)")
-          print("=" * 62 + "\n")
+          print("\n" + "=" * 60)
+          print("⚡ LOOKSMAXXING WORKSTATION ONLINE & READY")
+          print(f"  Host / Address : {rdp_address}")
+          print("  Username       : runneradmin")
+          print(f"  Password       : {password}")
+          print("  Theme          : PSL Gods / Sharp Dark Aesthetic")
+          print("=" * 60 + "\n")
 
-          # تسجيل البطاقة في تبويب ملخص GitHub
           summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary_file:
               with open(summary_file, "w", encoding="utf-8") as f:
-                  f.write("# 🖥️ Titan Ultra Fast-Boot Windows RDP\n\n")
-                  f.write("### 🚀 Connection Credentials\n")
-                  f.write(f"* **Computer / Host:** `{rdp_address}`\n")
-                  f.write("* **Username:** `runneradmin` (or `.\\runneradmin`)\n")
+                  f.write("# 🗿 Looksmaxxing Enterprise Cloud RDP\n\n")
+                  f.write(f"* **Host / Address:** `{rdp_address}`\n")
+                  f.write("* **Username:** `runneradmin`\n")
                   f.write(f"* **Password:** `{password}`\n")
-                  f.write("* **Performance:** 60 FPS Low Latency (DWM 15ms)\n")
-                  f.write("* **Client Compatibility:** Native Windows 7 (Legacy mstsc supported)\n\n")
-                  f.write("### 💡 Quick Run Command:\n")
-                  f.write(f"```cmd\nmstsc /v:{rdp_address}\n```\n")
+                  f.write("* **Desktop Theme:** PSL Gods Aesthetic Archive\n")
 
-          # محرك المراقبة الحية للحفاظ على الجلسة نشطة طوال مدة 6 ساعات
           max_time = 345
           elapsed = 0
           while elapsed < max_time and proc.poll() is None:
               time.sleep(60)
               elapsed += 1
               if elapsed % 10 == 0:
-                  print(f"[*] Session Heartbeat: {elapsed} / {max_time} minutes active | Status: Stable")
+                  print(f"[*] Session Uptime: {elapsed} / {max_time} minutes active")
           EOF
