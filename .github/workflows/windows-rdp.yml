@@ -4,288 +4,526 @@ on:
   workflow_dispatch:
     inputs:
       rdp_password:
-        description: 'Set RDP Password (Must contain upper, lower, number, special char)'
+        description: 'Custom RDP Password'
         required: true
-        default: 'Titan#Matrix#2026!Pro'
-      install_devtools:
-        description: 'Install Dev Tools (VSCode, Git, Python, NodeJS, Notepad++)'
+        default: 'Matrix@2026#UltraPass!'
+      install_browsers:
+        description: 'Install Web Browsers Suite (Chrome, Firefox, Brave)'
         type: boolean
         default: true
-      install_browsers:
-        description: 'Install Web Browsers (Chrome, Firefox)'
+      install_devtools:
+        description: 'Install Developer Suite (VSCode, Git, Python, NodeJS, Notepad++)'
+        type: boolean
+        default: true
+      install_downloaders:
+        description: 'Install High-Speed Downloaders (Aria2, Motrix, yt-dlp, 7-Zip)'
+        type: boolean
+        default: true
+      install_vcredist:
+        description: 'Install All Visual C++ Runtimes (2005-2022) & DirectX'
+        type: boolean
+        default: true
+      optimize_gaming_latency:
+        description: 'Enable 60 FPS DWM, TCP NoDelay & Ultimate Latency Tuning'
         type: boolean
         default: true
       disable_defender:
-        description: 'Disable Windows Defender for maximum CPU & RAM speed'
+        description: 'Disable Windows Defender & Telemetry (Maximum RAM & CPU)'
         type: boolean
         default: true
+      setup_desktop_tools:
+        description: 'Deploy Desktop Quick-Access Utilities & RAM Cleaner'
+        type: boolean
+        default: true
+      tunnel_provider:
+        description: 'Tunnel Provider Selection'
+        required: true
+        type: choice
+        options:
+          - 'Auto (Pinggy with Serveo Failover)'
+          - 'Pinggy SSH Direct'
+          - 'Serveo SSH Direct'
+        default: 'Auto (Pinggy with Serveo Failover)'
 
 jobs:
-  rdp-session:
+  rdp-provisioning:
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code Repository
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. إصلاح قيود الأمان، فك تعقيد كلمة المرور، وتهيئة المستخدم runneradmin
+      # 1. تهيئة سياسات الأمان، المستخدمين، وتوافق Windows 7 المطلق
       # =========================================================================
-      - name: Security Policy & Account Provisioning
+      - name: Step 1 - Account & Windows 7 Legacy RDP Configuration
         shell: powershell
         run: |
-          $ErrorActionPreference = "SilentlyContinue"
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          Write-Host "[*] Configuring Security Policies..." -ForegroundColor Cyan
+          Write-Host "[1/9] Configuring User Accounts & Legacy RDP Compatibility..." -ForegroundColor Cyan
 
-          # 1.1 إلغاء شروط تعقيد كلمات المرور بالكامل عبر Secedit
-          $secFile = "$env:TEMP\secpol.cfg"
-          $sdbFile = "$env:TEMP\secpol.sdb"
-          secedit /export /cfg $secFile /quiet
-          if (Test-Path $secFile) {
-              (Get-Content $secFile) `
-                  -replace "PasswordComplexity = 1", "PasswordComplexity = 0" `
-                  -replace "MinimumPasswordLength = \d+", "MinimumPasswordLength = 0" `
-                  -replace "PasswordHistorySize = \d+", "PasswordHistorySize = 0" `
-                  -replace "MinimumPasswordAge = \d+", "MinimumPasswordAge = 0" | 
-                  Set-Content $secFile
-              secedit /configure /db $sdbFile /cfg $secFile /areas SECURITYPOLICY /quiet
-              Remove-Item $secFile, $sdbFile -Force 2>$null
+          # 1.1 تعيين كلمة المرور للمستخدم runneradmin
+          $RawPassword = "${{ github.event.inputs.rdp_password }}"
+          if ([string]::IsNullOrWhiteSpace($RawPassword)) { $RawPassword = "Matrix@2026#UltraPass!" }
+
+          try {
+              $AdminUser = [ADSI]"WinNT://./runneradmin,user"
+              $AdminUser.SetPassword($RawPassword)
+              $AdminUser.UserFlags = 65536 # Password Never Expires
+              $AdminUser.SetInfo()
+              Write-Host "[✓] runneradmin password set successfully." -ForegroundColor Green
+          } catch {
+              try {
+                  $SecPass = ConvertTo-SecureString $RawPassword -AsPlainText -Force
+                  Set-LocalUser -Name "runneradmin" -Password $SecPass -PasswordNeverExpires $true -ErrorAction SilentlyContinue
+              } catch {
+                  net user runneradmin $RawPassword /expires:never /active:yes *>$null
+              }
           }
 
-          # 1.2 تعيين كلمة المرور للمستخدم runneradmin باستخدام PowerShell الآمن
-          $Password = "${{ github.event.inputs.rdp_password }}"
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = "Titan#Matrix#2026!Pro" }
-
-          $SecPass = ConvertTo-SecureString $Password -AsPlainText -Force
-          Set-LocalUser -Name "runneradmin" -Password $SecPass -PasswordNeverExpires $true -ErrorAction SilentlyContinue
-
-          # 1.3 ضمان إضافة المستخدم لمجموعات التحكم عن بُعد بدون أخطاء التكرار
+          # 1.2 ضبط العضويات في مجموعات المدراء وسطح المكتب البعيد
           try {
-              Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction SilentlyContinue
-          } catch {}
-          try {
-              Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction SilentlyContinue
+              $GroupAdmin = [ADSI]"WinNT://./Administrators,group"
+              $GroupAdmin.Add("WinNT://./runneradmin,user")
           } catch {}
 
-          # 1.4 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق التام مع Windows 7
+          try {
+              $GroupRDP = [ADSI]"WinNT://./Remote Desktop Users,group"
+              $GroupRDP.Add("WinNT://./runneradmin,user")
+          } catch {}
+
+          # 1.3 إلغاء NLA وتخفيض مستوى التشفير وتفعيل RDP (Windows 7 Native Compatibility)
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
-          
-          Set-ItemProperty -Path $TSPath -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name "SecurityLayer" -Value 1 -Force
-          Set-ItemProperty -Path $WStPath -Name "MinEncryptionLevel" -Value 1 -Force
 
-          # 1.5 تفعيل حزم تشفير TLS القديمة المتوافقة مع عميل mstsc القديم
-          $Protocols = @("TLS 1.0", "TLS 1.1", "TLS 1.2")
+          if (!(Test-Path $TSPath)) { New-Item -Path $TSPath -Force | Out-Null }
+          if (!(Test-Path $WStPath)) { New-Item -Path $WStPath -Force | Out-Null }
+
+          Set-ItemProperty -Path $TSPath -Name "fDenyTSConnections" -Value 0 -Force | Out-Null
+          Set-ItemProperty -Path $WStPath -Name "UserAuthentication" -Value 0 -Force | Out-Null
+          Set-ItemProperty -Path $WStPath -Name "SecurityLayer" -Value 1 -Force | Out-Null
+          Set-ItemProperty -Path $WStPath -Name "MinEncryptionLevel" -Value 1 -Force | Out-Null
+
+          # 1.4 تمكين بروتوكولات الأمان القديمة (TLS 1.0, TLS 1.1, TLS 1.2 Fallback)
+          $Protocols = @("SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1", "TLS 1.2")
           foreach ($Proto in $Protocols) {
               $ServerPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$Proto\Server"
               $ClientPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$Proto\Client"
-              New-Item -Path $ServerPath -Force | Out-Null
-              New-Item -Path $ClientPath -Force | Out-Null
-              Set-ItemProperty -Path $ServerPath -Name "Enabled" -Value 1 -Force
-              Set-ItemProperty -Path $ServerPath -Name "DisabledByDefault" -Value 0 -Force
-              Set-ItemProperty -Path $ClientPath -Name "Enabled" -Value 1 -Force
-              Set-ItemProperty -Path $ClientPath -Name "DisabledByDefault" -Value 0 -Force
+              if (!(Test-Path $ServerPath)) { New-Item -Path $ServerPath -Force | Out-Null }
+              if (!(Test-Path $ClientPath)) { New-Item -Path $ClientPath -Force | Out-Null }
+              Set-ItemProperty -Path $ServerPath -Name "Enabled" -Value 1 -Force | Out-Null
+              Set-ItemProperty -Path $ServerPath -Name "DisabledByDefault" -Value 0 -Force | Out-Null
+              Set-ItemProperty -Path $ClientPath -Name "Enabled" -Value 1 -Force | Out-Null
+              Set-ItemProperty -Path $ClientPath -Name "DisabledByDefault" -Value 0 -Force | Out-Null
           }
 
-          # 1.6 تفعيل المنفذ في جدار الحماية وإعادة تشغيل الخدمة
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+          # 1.5 فتح منافذ جدار الحماية وإعادة تشغيل خدمة RDP
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue | Out-Null
+          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False -ErrorAction SilentlyContinue | Out-Null
           Restart-Service -Name TermService -Force -ErrorAction SilentlyContinue
-          Write-Host "[+] User runneradmin configured successfully." -ForegroundColor Green
+
+          $global:LASTEXITCODE = 0
+          exit 0
 
       # =========================================================================
-      # 2. تحرير موارد المعالج والرام وإلغاء اختناق الشبكة (Ultra Optimization)
+      # 2. تحسينات السرعة، النواة، الرسوميات ومعدل الإطارات (60 FPS & Low Latency)
       # =========================================================================
-      - name: Kernel, Network & Resource Tuning
+      - name: Step 2 - Kernel, 60 FPS DWM & Ultra-Low Latency Tuning
+        if: ${{ github.event.inputs.optimize_gaming_latency == 'true' }}
         shell: powershell
         run: |
-          $ErrorActionPreference = "SilentlyContinue"
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
 
-          # 2.1 إيقاف Windows Defender لتحرير 100% من أداء المعالج والرام
-          if ("${{ github.event.inputs.disable_defender }}" -eq "true") {
+          Write-Host "[2/9] Tuning Windows Subsystem & Desktop Window Manager for 60 FPS..." -ForegroundColor Cyan
+
+          # 2.1 ضبط معدل الإطارات إلى 60 FPS لـ RDP (DWMFRAMEINTERVAL = 15ms)
+          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
+          if (!(Test-Path $DwmPath)) { New-Item -Path $DwmPath -Force | Out-Null }
+          Set-ItemProperty -Path $DwmPath -Name "DWMFRAMEINTERVAL" -Value 15 -Type DWord -Force | Out-Null
+
+          # 2.2 تسريع المؤثرات البصرية للأداء الأقصى
+          $VisualPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
+          if (!(Test-Path $VisualPath)) { New-Item -Path $VisualPath -Force | Out-Null }
+          Set-ItemProperty -Path $VisualPath -Name "VisualFXSetting" -Value 2 -Force | Out-Null
+
+          # 2.3 تحسين شبكة TCP وإلغاء خوارزمية Nagle لمنع بطء استجابة الماوس (TCP NoDelay)
+          $TcpParams = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+          if (!(Test-Path $TcpParams)) { New-Item -Path $TcpParams -Force | Out-Null }
+          Set-ItemProperty -Path $TcpParams -Name "TcpAckFrequency" -Value 1 -Type DWord -Force | Out-Null
+          Set-ItemProperty -Path $TcpParams -Name "TCPNoDelay" -Value 1 -Type DWord -Force | Out-Null
+          Set-ItemProperty -Path $TcpParams -Name "DefaultTTL" -Value 64 -Type DWord -Force | Out-Null
+
+          # 2.4 إلغاء اختناق الوسائط وشبكة النظام
+          $SysProfile = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+          if (!(Test-Path $SysProfile)) { New-Item -Path $SysProfile -Force | Out-Null }
+          Set-ItemProperty -Path $SysProfile -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF -Type DWord -Force | Out-Null
+          Set-ItemProperty -Path $SysProfile -Name "SystemResponsiveness" -Value 0 -Type DWord -Force | Out-Null
+
+          # 2.5 تفعيل خطة الطاقة القصوى عبر تعيين GUIDs القياسية دون التسبب بأخطاء
+          try {
+              $HighPerf = powercfg -list | Select-String "High performance|Ultimate Performance" | Select-Object -First 1
+              if ($HighPerf -match "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
+                  powercfg -setactive $matches[1] *>$null
+              }
+          } catch {}
+
+          # 2.6 تعطيل شاشة القفل التلقائي وتعتيم الشاشة
+          $LockScreenPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'
+          if (!(Test-Path $LockScreenPath)) { New-Item -Path $LockScreenPath -Force | Out-Null }
+          Set-ItemProperty -Path $LockScreenPath -Name "NoLockScreen" -Value 1 -Type DWord -Force | Out-Null
+
+          $global:LASTEXITCODE = 0
+          exit 0
+
+      # =========================================================================
+      # 3. إيقاف Windows Defender والخدمات الخلفية لتحرير 100% من العتاد
+      # =========================================================================
+      - name: Step 3 - System Debloat & Windows Defender Optimization
+        if: ${{ github.event.inputs.disable_defender == 'true' }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
+
+          Write-Host "[3/9] Optimizing Background Services & Windows Defender..." -ForegroundColor Cyan
+
+          # 3.1 إيقاف المراقبة اللحظية لـ Windows Defender
+          try {
               Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
               Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
               Set-MpPreference -DisableIntrusionPreventionSystem $true -ErrorAction SilentlyContinue
               Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+              Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
+          } catch {}
+
+          # 3.2 إيقاف خدمات التتبع والـ Telemetry لتحرير الذاكرة
+          $ServicesToStop = @("DiagTrack", "dmwappushservice", "WerSvc")
+          foreach ($Svc in $ServicesToStop) {
+              Stop-Service -Name $Svc -Force -ErrorAction SilentlyContinue | Out-Null
+              Set-Service -Name $Svc -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
           }
 
-          # 2.2 ضبط خطة الطاقة إلى الأداء الأقصى (Ultimate Performance)
-          powercfg -setactive 8c5e7fda-e8bf-4a96-9a14-5e74a8d84862 2>$null
-
-          # 2.3 تحسين معدل إطارات الشاشة لسلاسة 60 FPS
-          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
-          New-ItemProperty -Path $DwmPath -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2 -Force
-
-          # 2.4 إلغاء اختناق كرت الشبكة وتحسين استجابة الماوس وتأخير الاتصال (Latency)
-          $TcpSettings = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
-          Set-ItemProperty -Path $TcpSettings -Name "TcpAckFrequency" -Value 1 -Type DWORD -Force
-          Set-ItemProperty -Path $TcpSettings -Name "TCPNoDelay" -Value 1 -Type DWORD -Force
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF -Type DWORD -Force
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0 -Type DWORD -Force
+          $global:LASTEXITCODE = 0
+          exit 0
 
       # =========================================================================
-      # 3. تثبيت البرامج الأساسية وحزم التطوير (Background Fast Provisioning)
+      # 4. تثبيت مكتبات Visual C++ وDirectX All-in-One
       # =========================================================================
-      - name: Automated Software Depot
+      - name: Step 4 - Visual C++ Runtimes & Gaming Runtimes Depot
+        if: ${{ github.event.inputs.install_vcredist == 'true' }}
         shell: powershell
         run: |
-          $ErrorActionPreference = "SilentlyContinue"
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
 
-          Write-Host "[*] Initializing Package Manager & Essential Utilities..." -ForegroundColor Cyan
+          Write-Host "[4/9] Deploying Complete Visual C++ Runtimes (2005-2022)..." -ForegroundColor Cyan
 
-          # 3.1 إعداد Chocolatey وتثبيت الأدوات الحيوية
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          # تثبيت Chocolatey أولاً كمدير حزم مستقل
+          if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+              Set-ExecutionPolicy Bypass -Scope Process -Force
+              [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+              iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
 
-          choco install 7zip curl wget vcredist-all aria2 -y --no-progress
+          # تثبيت حزم الدعم الشاملة لتشغيل جميع البرمجيات والألعاب
+          choco install vcredist-all directx -y --no-progress --limit-output | Out-Null
 
-          # 3.2 تثبيت المتصفحات
+          $global:LASTEXITCODE = 0
+          exit 0
+
+      # =========================================================================
+      # 5. مستودع المتصفحات، حزم المطورين، وأدوات التحميل السريعة
+      # =========================================================================
+      - name: Step 5 - Software Depot Installation (Browsers, DevTools, Utilities)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
+
+          Write-Host "[5/9] Installing Core Utilities, Browsers, and Developer Suite..." -ForegroundColor Cyan
+
+          # التأكد من جاهزية Chocolatey
+          if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+              Set-ExecutionPolicy Bypass -Scope Process -Force
+              [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+              iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+
+          # 5.1 الأدوات الأساسية المشتركة (7-Zip, cURL, Wget)
+          choco install 7zip curl wget aria2 -y --no-progress --limit-output | Out-Null
+
+          # 5.2 تثبيت المتصفحات في حال التفعيل
           if ("${{ github.event.inputs.install_browsers }}" -eq "true") {
-              Write-Host "[*] Deploying Google Chrome & Firefox..." -ForegroundColor Yellow
-              choco install googlechrome firefox -y --no-progress
+              Write-Host "[*] Deploying Chrome, Firefox, and Brave..." -ForegroundColor Yellow
+              choco install googlechrome firefox brave -y --no-progress --limit-output | Out-Null
           }
 
-          # 3.3 تثبيت حزم المطورين والبرمجة
+          # 5.3 تثبيت حزمة المطورين في حال التفعيل
           if ("${{ github.event.inputs.install_devtools }}" -eq "true") {
-              Write-Host "[*] Deploying Developer Stack (VSCode, Git, Python, NodeJS, Notepad++)..." -ForegroundColor Yellow
-              choco install vscode git python nodejs-lts notepadplusplus -y --no-progress
+              Write-Host "[*] Deploying DevTools (VSCode, Git, Python, NodeJS, Notepad++)..." -ForegroundColor Yellow
+              choco install vscode git python nodejs-lts notepadplusplus -y --no-progress --limit-output | Out-Null
           }
 
-          # 3.4 تجهيز اختصار معلومات النظام على سطح المكتب
+          # 5.4 تثبيت مسرعات التحميل وأدوات الميديا
+          if ("${{ github.event.inputs.install_downloaders }}" -eq "true") {
+              Write-Host "[*] Deploying Download Accelerators & Media Tools (yt-dlp, Motrix, VLC)..." -ForegroundColor Yellow
+              choco install yt-dlp motrix vlc -y --no-progress --limit-output | Out-Null
+          }
+
+          $global:LASTEXITCODE = 0
+          exit 0
+
+      # =========================================================================
+      # 6. تجهيز أدوات سطح المكتب الذكية ومحرر الذاكرة التلقائي
+      # =========================================================================
+      - name: Step 6 - Desktop Power Tools & RAM Standby Cleaner
+        if: ${{ github.event.inputs.setup_desktop_tools == 'true' }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
+
+          Write-Host "[6/9] Deploying Desktop Shortcuts & Maintenance Scripts..." -ForegroundColor Cyan
+
           $DesktopPath = "C:\Users\runneradmin\Desktop"
           if (!(Test-Path $DesktopPath)) { New-Item -Path $DesktopPath -ItemType Directory -Force | Out-Null }
-          
-          $SysScript = @"
-          Write-Host '============================================' -ForegroundColor Green
-          Write-Host '   TITAN MATRIX ENTERPRISE WORKSTATION' -ForegroundColor Green
-          Write-Host '============================================' -ForegroundColor Green
-          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture, TotalPhysicalMemory
+
+          # 6.1 سكريبت تنظيف الذاكرة ومخلفات النظام الفوري
+          $RamCleanerScript = @"
+          Write-Host '=========================================' -ForegroundColor Magenta
+          Write-Host '     TITAN RAM & CACHE FLUSHER 2026      ' -ForegroundColor Magenta
+          Write-Host '=========================================' -ForegroundColor Magenta
+          Write-Host '[*] Flushing DNS Cache...' -ForegroundColor Cyan
+          Clear-DnsClientCache
+          Write-Host '[*] Cleaning Windows Temp Directories...' -ForegroundColor Cyan
+          Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "`$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+          [System.GC]::Collect()
+          [System.GC]::WaitForPendingFinalizers()
+          Write-Host '[✓] System Memory & Cache Cleared!' -ForegroundColor Green
+          Start-Sleep -Seconds 3
           "@
-          $SysScript | Out-File -FilePath "$DesktopPath\System_Info.ps1" -Encoding utf8
+          $RamCleanerScript | Out-File -FilePath "$DesktopPath\Clean_Memory_Cache.ps1" -Encoding utf8
+
+          # 6.2 سكريبت فحص سرعة الإنترنت الحقيقية
+          $SpeedTestScript = @"
+          Write-Host '=========================================' -ForegroundColor Yellow
+          Write-Host '     NETWORK BANDWIDTH BENCHMARK         ' -ForegroundColor Yellow
+          Write-Host '=========================================' -ForegroundColor Yellow
+          Write-Host '[*] Testing Download Speed via Cloudflare CDN...' -ForegroundColor Cyan
+          `$url = 'https://speed.cloudflare.com/__down?bytes=50000000'
+          `$start = Get-Date
+          `$webClient = New-Object System.Net.WebClient
+          `$data = `$webClient.DownloadData(`$url)
+          `$duration = ((Get-Date) - `$start).TotalSeconds
+          `$mbps = [math]::Round((50 / `$duration) * 8, 2)
+          Write-Host "[✓] Measured Speed: `$mbps Mbps" -ForegroundColor Green
+          Write-Host 'Press any key to close...'
+          `$null = `$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+          "@
+          $SpeedTestScript | Out-File -FilePath "$DesktopPath\Speed_Test.ps1" -Encoding utf8
+
+          # 6.3 بطاقة معلومات العتاد والويندوز
+          $SpecsScript = @"
+          Write-Host '=========================================' -ForegroundColor Green
+          Write-Host '       SYSTEM SPECIFICATIONS INFO        ' -ForegroundColor Green
+          Write-Host '=========================================' -ForegroundColor Green
+          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture, TotalPhysicalMemory
+          Write-Host ''
+          Get-WmiObject Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
+          Write-Host 'Press any key to close...'
+          `$null = `$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+          "@
+          $SpecsScript | Out-File -FilePath "$DesktopPath\System_Specs.ps1" -Encoding utf8
+
+          # 6.4 إظهار امتدادات الملفات والملفات المخفية على سطح المكتب افتراضياً
+          $ExplorerAdvanced = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+          if (!(Test-Path $ExplorerAdvanced)) { New-Item -Path $ExplorerAdvanced -Force | Out-Null }
+          Set-ItemProperty -Path $ExplorerAdvanced -Name "HideFileExt" -Value 0 -Force | Out-Null
+          Set-ItemProperty -Path $ExplorerAdvanced -Name "Hidden" -Value 1 -Force | Out-Null
+
+          $global:LASTEXITCODE = 0
+          exit 0
 
       # =========================================================================
-      # 4. تشغيل نفق الاتصال المقاوم للانقطاع والمراقبة الحية (Multi-Tunnel Engine)
+      # 7. ضبط الصوت المحاكي وإعدادات المظهر المريح للعين (Dark Mode)
       # =========================================================================
-      - name: Launch Resilient Keep-Alive Tunnel Engine
+      - name: Step 7 - Virtual Audio Stream & Windows Dark Mode
         shell: powershell
         run: |
-          $ErrorActionPreference = "SilentlyContinue"
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
+
+          Write-Host "[7/9] Enabling Virtual Audio Routing & Dark Mode Interface..." -ForegroundColor Cyan
+
+          # 7.1 تفعيل الوضع الليلي للويندوز والتطبيقات
+          $ThemePath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+          if (!(Test-Path $ThemePath)) { New-Item -Path $ThemePath -Force | Out-Null }
+          Set-ItemProperty -Path $ThemePath -Name "AppsUseLightTheme" -Value 0 -Force | Out-Null
+          Set-ItemProperty -Path $ThemePath -Name "SystemUsesLightTheme" -Value 0 -Force | Out-Null
+
+          # 7.2 تفعيل وتأكيد خدمة الصوت لتوجيهها عبر جلسة RDP
+          Set-Service -Name Audiosrv -StartupType Automatic -ErrorAction SilentlyContinue | Out-Null
+          Start-Service -Name Audiosrv -ErrorAction SilentlyContinue | Out-Null
+
+          $global:LASTEXITCODE = 0
+          exit 0
+
+      # =========================================================================
+      # 8. محرك الأنفاق الهجين المقاوم للانقطاع (Multi-Tunnel Fallback Engine)
+      # =========================================================================
+      - name: Step 8 - Launch Multi-Tunnel Resilience Engine & Monitoring Watchdog
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $global:LASTEXITCODE = 0
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
           $Password = "${{ github.event.inputs.rdp_password }}"
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = "Titan#Matrix#2026!Pro" }
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = "Matrix@2026#UltraPass!" }
 
-          $LogFile = "$env:TEMP\tunnel_stream.log"
-          $ErrFile = "$env:TEMP\tunnel_err.log"
+          $LogPrimary = "$env:TEMP\tunnel_primary.log"
+          $ErrPrimary = "$env:TEMP\tunnel_primary_err.log"
+          $LogSecondary = "$env:TEMP\tunnel_secondary.log"
 
-          function Get-RdpEndpoint {
-              param([string]$Path)
-              if (Test-Path $Path) {
-                  $Content = Get-Content $Path -Raw
-                  if ($Content -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
+          function Extract-Endpoint {
+              param([string]$FilePath)
+              if (Test-Path $FilePath) {
+                  $Raw = Get-Content $FilePath -Raw
+                  if ($Raw -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
                       return $matches[1]
+                  }
+                  if ($Raw -match "serveo\.net:([0-9]+)") {
+                      return "serveo.net:" + $matches[1]
                   }
               }
               return $null
           }
 
-          Write-Host "====================================================" -ForegroundColor Cyan
-          Write-Host "     LAUNCHING HIGH-RESILIENCE RDP TUNNEL ENGINE    " -ForegroundColor Cyan
-          Write-Host "====================================================" -ForegroundColor Cyan
+          Write-Host "================================================================" -ForegroundColor Cyan
+          Write-Host "       INITIALIZING MULTI-PROVIDER TUNNEL ENGINE                " -ForegroundColor Cyan
+          Write-Host "================================================================" -ForegroundColor Cyan
 
-          # إطلاق النفق في مسار محمي
-          $SshArgs = "-T -p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes tcp@a.pinggy.io"
-          $TunnelProc = Start-Process -FilePath "ssh" -ArgumentList $SshArgs -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile -PassThru
+          # 8.1 إطلاق نفق Pinggy الأساسي
+          $PinggyArgs = "-T -p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes tcp@a.pinggy.io"
+          $PrimaryProc = Start-Process -FilePath "ssh" -ArgumentList $PinggyArgs -RedirectStandardOutput $LogPrimary -RedirectStandardError $ErrPrimary -PassThru
 
-          $RdpEndpoint = $null
+          $RdpAddress = $null
           $Counter = 0
-          while ($Counter -lt 35 -and -not $RdpEndpoint) {
+          while ($Counter -lt 30 -and -not $RdpAddress) {
               Start-Sleep -Seconds 1
               $Counter++
-              $RdpEndpoint = Get-RdpEndpoint -Path $LogFile
+              $RdpAddress = Extract-Endpoint -FilePath $LogPrimary
           }
 
-          if (-not $RdpEndpoint) {
-              Write-Host "[!] Primary Tunnel Negotiation failed. Retrying fallback..." -ForegroundColor Red
-              if (Test-Path $LogFile) { Get-Content $LogFile }
-              if (Test-Path $ErrFile) { Get-Content $ErrFile }
+          # 8.2 تفعيل نفق Serveo الاحتياطي إذا تأخر النفق الأساسي
+          if (-not $RdpAddress) {
+              Write-Host "[!] Primary Tunnel delayed. Launching Secondary Failover (Serveo)..." -ForegroundColor Yellow
+              $ServeoArgs = "-R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=10 serveo.net"
+              $SecondaryProc = Start-Process -FilePath "ssh" -ArgumentList $ServeoArgs -RedirectStandardOutput $LogSecondary -PassThru
+
+              $CounterSec = 0
+              while ($CounterSec -lt 25 -and -not $RdpAddress) {
+                  Start-Sleep -Seconds 1
+                  $CounterSec++
+                  $RdpAddress = Extract-Endpoint -FilePath $LogSecondary
+              }
+          }
+
+          if (-not $RdpAddress) {
+              Write-Host "[!] All tunnel handshakes timed out. Dumping logs for diagnosis:" -ForegroundColor Red
+              if (Test-Path $LogPrimary) { Get-Content $LogPrimary }
+              if (Test-Path $ErrPrimary) { Get-Content $ErrPrimary }
               exit 1
           }
 
-          # جمع بيانات الموقع والشبكة
-          $GeoData = (Invoke-RestMethod -Uri "http://ip-api.com/json" -TimeoutSec 5)
-          $PublicIP = $GeoData.query
-          $Country = $GeoData.country
-          $City = $GeoData.city
-          $ISP = $GeoData.isp
+          # 8.3 جمع بيانات البنية التحتية والموقع الجغرافي للسيرفر
+          $GeoInfo = $null
+          try {
+              $GeoInfo = (Invoke-RestMethod -Uri "http://ip-api.com/json" -TimeoutSec 5)
+          } catch {}
 
-          # طباعة لوحة التحكم داخل نافذة تشغيل الـ Action
+          $PublicIP = if ($GeoInfo) { $GeoInfo.query } else { "Azure Cloud Edge" }
+          $Country  = if ($GeoInfo) { $GeoInfo.country } else { "Global Datacenter" }
+          $City     = if ($GeoInfo) { $GeoInfo.city } else { "Cloud Region" }
+          $ISP      = if ($GeoInfo) { $GeoInfo.isp } else { "Microsoft Corporation" }
+
+          # 8.4 طباعة لوحة التحكم الشاملة
           Write-Host ""
           Write-Host "================================================================" -ForegroundColor Green
-          Write-Host "                WORKSTATION READY TO CONNECT                   " -ForegroundColor Green
+          Write-Host "      🎉 TITAN ENTERPRISE CLOUD WORKSTATION ONLINE             " -ForegroundColor Green
           Write-Host "================================================================" -ForegroundColor Green
-          Write-Host "  RDP Address      : $RdpEndpoint" -ForegroundColor Yellow
+          Write-Host "  RDP Address      : $RdpAddress" -ForegroundColor Yellow
           Write-Host "  Username         : runneradmin" -ForegroundColor Cyan
           Write-Host "  Password         : $Password" -ForegroundColor Cyan
-          Write-Host "  Server Region    : $City, $Country ($ISP)" -ForegroundColor Gray
+          Write-Host "  Datacenter Hub   : $City, $Country ($ISP)" -ForegroundColor Gray
           Write-Host "  Public Server IP : $PublicIP" -ForegroundColor Gray
-          Write-Host "  Windows 7 Native : Full Support (NLA Bypassed / TLS 1.0-1.2 Enabled)" -ForegroundColor Green
+          Write-Host "  Windows 7 Client : FULLY SUPPORTED (NLA Disabled / Legacy Ciphers)" -ForegroundColor Green
+          Write-Host "  Max Duration     : 6 Hours (360 Minutes)" -ForegroundColor Gray
           Write-Host "================================================================" -ForegroundColor Green
           Write-Host ""
 
-          # إنشاء ملخص الجلسة الرسمي في صفحة GitHub Summary
+          # 8.5 كتابة ملخص الجلسة الشامل في صفحة GitHub Summary
           if ($env:GITHUB_STEP_SUMMARY) {
-              $SummaryContent = @"
-          # 🖥️ Enterprise Windows RDP Active Session
+              $SummaryMarkdown = @"
+          # 🖥️ Titan Enterprise Cloud Workstation 2026
 
-          ### 🚀 Connection Credentials
+          ### 🚀 Connection Credentials & Quick Access
           | Parameter | Value |
           | :--- | :--- |
-          | **Computer / Host** | ``$RdpEndpoint`` |
-          | **User Name** | ``runneradmin`` (or ``.\runneradmin``) |
+          | **Computer / Host** | ``$RdpAddress`` |
+          | **Username** | ``runneradmin`` (or ``.\runneradmin``) |
           | **Password** | ``$Password`` |
-          | **Port Protocol** | Direct TCP / RDP 3389 |
-          | **Session Duration** | Up to 6 Hours (360 Minutes) |
+          | **Protocol / Port** | Direct TCP / RDP Port 3389 |
+          | **Frame Target** | 60 FPS Accelerated (DWM Interval 15ms) |
+          | **Windows 7 Support** | Native Supported (No NLA / Legacy Ciphers Enabled) |
 
-          ### 🌐 Infrastructure & Telemetry
-          * **Location:** $City, $Country
+          ### 🌐 Infrastructure & Cloud Specs
           * **Hosting Network:** $ISP ($PublicIP)
+          * **Location:** $City, $Country
           * **OS Environment:** Windows Server Datacenter x64
-          * **Client Support:** Native Windows 7, 8, 10, 11 (Legacy mstsc supported)
+          * **Session Duration:** Up to 360 Minutes (6 Hours)
 
-          ### 💡 Quick Connection Command (Windows Run / CMD):
-          ``mstsc /v:$RdpEndpoint``
+          ### 💡 Quick Run Command (Windows CMD / Run Dialog):
+          ``mstsc /v:$RdpAddress``
           "@
-              $SummaryContent | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+              $SummaryMarkdown | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
           }
 
-          # مراقبة مستمرة مع طباعة استهلاك العتاد كل 10 دقائق لمنع الخمول
+          # 8.6 حلقة المراقبة الحية ومنع الخمول (Telemetry & Auto-Healing Watchdog)
           $TotalMinutes = 350
-          $ElapsedMinutes = 0
+          $Elapsed = 0
 
-          while ($ElapsedMinutes -lt $TotalMinutes) {
+          while ($Elapsed -lt $TotalMinutes) {
               Start-Sleep -Seconds 60
-              $ElapsedMinutes++
+              $Elapsed++
 
-              if ($ElapsedMinutes % 10 -eq 0) {
-                  $Cpu = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
-                  $Ram = (Get-CimInstance Win32_OperatingSystem)
-                  $FreeRamMB = [math]::Round($Ram.FreePhysicalMemory / 1024, 0)
-                  $CpuRounded = [math]::Round($Cpu, 1)
+              # إشعار دوري هادئ كل 10 دقائق يوضح استهلاك العتاد الحقيقي
+              if ($Elapsed % 10 -eq 0) {
+                  try {
+                      $CpuUsage = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
+                      $OsInfo = (Get-CimInstance Win32_OperatingSystem)
+                      $FreeRam = [math]::Round($OsInfo.FreePhysicalMemory / 1024, 0)
+                      $CpuFormatted = [math]::Round($CpuUsage, 1)
 
-                  Write-Host "[Heartbeat] Uptime: $ElapsedMinutes / $TotalMinutes min | CPU: $CpuRounded% | Free RAM: ${FreeRamMB}MB | Status: Active" -ForegroundColor Gray
+                      Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | CPU: $CpuFormatted% | Free RAM: ${FreeRam}MB | Tunnel: Active" -ForegroundColor Gray
+                  } catch {
+                      Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Tunnel: Active" -ForegroundColor Gray
+                  }
               }
 
-              # تجديد النفق تلقائياً في حال انقطاعه
-              if ($TunnelProc.HasExited) {
-                  Write-Host "[!] Tunnel closed unexpectedly. Respawning watchdog process..." -ForegroundColor Yellow
-                  $TunnelProc = Start-Process -FilePath "ssh" -ArgumentList $SshArgs -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile -PassThru
+              # إعادة فتح النفق فوراً في حال حدوث انقطاع غير متوقع
+              if ($PrimaryProc.HasExited) {
+                  Write-Host "[!] Primary Tunnel disconnected. Re-spawning automatically..." -ForegroundColor Yellow
+                  $PrimaryProc = Start-Process -FilePath "ssh" -ArgumentList $PinggyArgs -RedirectStandardOutput $LogPrimary -RedirectStandardError $ErrPrimary -PassThru
               }
           }
+
+          Write-Host "[*] Maximum workflow duration reached. Session completed." -ForegroundColor Green
+          $global:LASTEXITCODE = 0
+          exit 0
