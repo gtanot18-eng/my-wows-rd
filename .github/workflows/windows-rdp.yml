@@ -6,7 +6,7 @@ on:
       rdp_password:
         description: 'Custom RDP Password'
         required: true
-        default: 'Titan#Matrix#2026!Pro'
+        default: 'half'
 
 jobs:
   rdp-deployment:
@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة الحساب وإلغاء قيود التشفير للتوافق التام مع Windows 7
+      # 1. فك شروط تعقيد كلمة المرور وتهيئة الحساب للتوافق مع Windows 7
       # =========================================================================
       - name: Configure System & Windows 7 RDP
         shell: powershell
@@ -26,15 +26,30 @@ jobs:
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          $Password = '${{ github.event.inputs.rdp_password }}'
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'Titan#Matrix#2026!Pro' }
+          # 1.1 إلغاء قيود طول وتعقيد كلمة المرور لقبول 'half'
+          $secFile = Join-Path $env:TEMP "secpol.cfg"
+          $sdbFile = Join-Path $env:TEMP "secpol.sdb"
+          secedit /export /cfg $secFile /quiet
+          if (Test-Path $secFile) {
+              $cfgContent = Get-Content $secFile
+              $cfgContent = $cfgContent -replace "PasswordComplexity = 1", "PasswordComplexity = 0"
+              $cfgContent = $cfgContent -replace "MinimumPasswordLength = \d+", "MinimumPasswordLength = 0"
+              $cfgContent = $cfgContent -replace "PasswordHistorySize = \d+", "PasswordHistorySize = 0"
+              $cfgContent = $cfgContent -replace "MinimumPasswordAge = \d+", "MinimumPasswordAge = 0"
+              Set-Content -Path $secFile -Value $cfgContent
+              secedit /configure /db $sdbFile /cfg $secFile /areas SECURITYPOLICY /quiet
+              Remove-Item -Path $secFile, $sdbFile -Force -ErrorAction SilentlyContinue
+          }
 
-          # ضبط حساب runneradmin
+          # 1.2 تعيين كلمة المرور
+          $Password = '${{ github.event.inputs.rdp_password }}'
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
+
           net user runneradmin $Password /expires:never /active:yes
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # تفعيل RDP وإلغاء NLA وتخفيض التشفير (Windows 7 Native)
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير (Windows 7 Native)
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -42,7 +57,7 @@ jobs:
           Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
           Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
 
-          # تحسين الأداء وإلغاء تأخير الاستجابة
+          # 1.4 تحسين الأداء وإلغاء تأخير الاستجابة
           $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
           Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
           Set-MpPreference -DisableRealtimeMonitoring $true
@@ -51,7 +66,7 @@ jobs:
           Restart-Service -Name TermService -Force
 
       # =========================================================================
-      # 2. إطلاق محرك الأنفاق فائق السرعة عبر نظام البث المباشر غير المخزن مؤقتاً
+      # 2. إطلاق محرك الأنفاق فائق السرعة عبر نظام البث المباشر
       # =========================================================================
       - name: Launch High-Speed Direct Tunnel
         shell: bash
@@ -65,11 +80,10 @@ jobs:
           import urllib.request
           import zipfile
 
-          # فرض ترميز UTF-8
           if hasattr(sys.stdout, 'reconfigure'):
               sys.stdout.reconfigure(encoding='utf-8')
 
-          password = "${{ github.event.inputs.rdp_password }}" or "Titan#Matrix#2026!Pro"
+          password = "${{ github.event.inputs.rdp_password }}" or "half"
           rdp_address = None
 
           print("[*] Launching Primary High-Speed TCP Engine (Pinggy Direct Stream)...")
@@ -140,7 +154,7 @@ jobs:
               print("[X] Failed to establish tunnel.")
               sys.exit(1)
 
-          # طباعة بيانات الاتصال النظيفة
+          # طباعة بيانات الاتصال
           print("\n" + "=" * 60)
           print("[✓] RDP SESSION IS ACTIVE & READY")
           print(f"  Address  : {rdp_address}")
