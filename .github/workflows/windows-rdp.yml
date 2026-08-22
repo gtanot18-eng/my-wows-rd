@@ -1,4 +1,4 @@
-name: Bore Ultra-Stable Unlimited RDP 2026
+name: Windows RDP with Ngrok
 
 on:
   workflow_dispatch:
@@ -9,100 +9,67 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # 1. تهيئة كلمة المرور وتفعيل صلاحيات RDP
-      - name: Configure Built-in RunnerAdmin
+      - name: System & Windows 7 Optimization
         shell: powershell
         run: |
-          # تعيين كلمة مرور صريحة للمستخدم الأساسي runneradmin
+          # ضبط كلمة المرور للمستخدم runneradmin
           $adminUser = "runneradmin"
           $password = "Matrix2026Pass"
-          
           net user $adminUser $password
           net localgroup Administrators $adminUser /add
           net localgroup "Remote Desktop Users" $adminUser /add
 
-          # تفعيل RDP وتعطيل NLA والتشفير المقيد لـ Windows 7
+          # تفعيل RDP وتعطيل NLA والتشفير المقيد للتوافق التام مع Windows 7
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
 
-          # تسريع الاستجابة ومعدل 60 FPS
+          # تسريع إطارات العرض لـ 60 FPS
           New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق Bore TCP
-      - name: Launch Bore Direct TCP Engine
-        shell: bash
+      - name: Launch Ngrok Tunnel & Display Connection Info
+        shell: powershell
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
-          python -u - << 'EOF'
-          import subprocess
-          import time
-          import re
-          import os
-          import sys
-          import urllib.request
-          import zipfile
+          # تحميل وفك ضغط Ngrok
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive -Path "ngrok.zip" -DestinationPath "." -Force
 
-          print("[*] Downloading Bore Tunnel Binary...")
-          bore_url = "https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip"
-          urllib.request.urlretrieve(bore_url, "bore.zip")
-          
-          with zipfile.ZipFile("bore.zip", 'r') as zip_ref:
-              zip_ref.extractall(".")
+          # تسجيل التوكن وتشغيل النفق في الخلفية
+          .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+          Start-Sleep -Seconds 5
 
-          print("[*] Launching Bore TCP Relay to bore.pub...")
-          proc = subprocess.Popen(
-              ["./bore.exe", "local", "3389", "--to", "bore.pub"],
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1
-          )
+          # استخراج عنوان الاتصال
+          $tunnels = (Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels").tunnels
+          $rdpAddress = $tunnels[0].public_url.Replace("tcp://", "")
 
-          rdp_address = None
-          start_time = time.time()
+          Write-Host ""
+          Write-Host "==========================================" -ForegroundColor Green
+          Write-Host " [✓] RDP SESSION IS ACTIVE" -ForegroundColor Green
+          Write-Host " Computer / Address : $rdpAddress" -ForegroundColor Yellow
+          Write-Host " Username           : runneradmin" -ForegroundColor Cyan
+          Write-Host " Password           : Matrix2026Pass" -ForegroundColor Cyan
+          Write-Host "==========================================" -ForegroundColor Green
+          Write-Host ""
 
-          while time.time() - start_time < 35:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              clean_line = line.strip()
-              print(f"[Bore Engine] {clean_line}")
+          # إضافة التفاصيل لصفحة Summary في GitHub
+          if ($env:GITHUB_STEP_SUMMARY) {
+              "### 🚀 Ngrok Windows RDP Session" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+              "* **Computer:** ``$rdpAddress``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "* **Username:** ``runneradmin``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "* **Password:** ``Matrix2026Pass``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
 
-              match = re.search(r"bore\.pub:([0-9]+)", clean_line)
-              if match:
-                  port = match.group(1)
-                  rdp_address = f"bore.pub:{port}"
-                  break
-
-          if rdp_address:
-              print("\n" + "=" * 60)
-              print("[+] DIRECT RDP SESSION ACTIVE & READY")
-              print(f" Direct Address : {rdp_address}")
-              print(" Username       : runneradmin")
-              print(" Password       : Matrix2026Pass")
-              print("=" * 60 + "\n")
-
-              summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-              if summary_file:
-                  with open(summary_file, "a", encoding="utf-8") as f:
-                      f.write("### ⚡ Bore Unlimited RDP\n\n")
-                      f.write(f"* **Computer:** `{rdp_address}`\n")
-                      f.write("* **Username:** `runneradmin` (or `.\\runneradmin`)\n")
-                      f.write("* **Password:** `Matrix2026Pass`\n")
-
-              minutes = 0
-              while minutes < 340 and proc.poll() is None:
-                  time.sleep(60)
-                  minutes += 1
-          else:
-              print("[!] Failed to obtain Bore tunnel port.")
-              sys.exit(1)
-          EOF
+          # إبقاء السيرفر نشطاً لمدة 6 ساعات
+          $minutes = 0
+          while ($minutes -lt 340) {
+              Start-Sleep -Seconds 60
+              $minutes++
+          }
