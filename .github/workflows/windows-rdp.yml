@@ -1,8 +1,11 @@
-name: Looksmaxxing Ultra Edition Windows RDP 2026
+name: Titan Ngrok Looksmaxxing Windows RDP 2026
 
 on:
   workflow_dispatch:
     inputs:
+      ngrok_token:
+        description: 'Ngrok Auth Token (from dashboard.ngrok.com)'
+        required: true
       rdp_password:
         description: 'RDP Password'
         required: true
@@ -18,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة الحساب السريعة وتجاوز قيود الأمان (كلمة المرور: half)
+      # 1. تهيئة الحساب السريعة وإلغاء قيود الأمان (كلمة المرور: half)
       # =========================================================================
       - name: Configure System & Windows 7 RDP
         shell: powershell
@@ -26,7 +29,7 @@ jobs:
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 1.1 فك تعقيد كلمة المرور
+          # 1.1 فك تعقيد كلمة المرور لقبول 'half'
           $secCfg = Join-Path $env:TEMP "secpol.cfg"
           $secSdb = Join-Path $env:TEMP "secpol.sdb"
           secedit /export /cfg $secCfg /quiet
@@ -39,7 +42,7 @@ jobs:
               Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
           }
 
-          # 1.2 ضبط الحساب وتوافق Windows 7
+          # 1.2 تعيين كلمة المرور والمستخدم runneradmin
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
@@ -47,6 +50,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير (Windows 7 Native Compatibility)
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -54,7 +58,7 @@ jobs:
           Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
           Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
 
-          # 1.3 تسريع 60 FPS وTCP NoDelay
+          # 1.4 تسريع 60 FPS وTCP NoDelay
           $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
           Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
@@ -77,7 +81,7 @@ jobs:
           $PSLDir = Join-Path $DesktopPath 'PSL_Gods_Archive'
           if (!(Test-Path $PSLDir)) { New-Item -Path $PSLDir -ItemType Directory -Force | Out-Null }
 
-          # 2.1 تحميل خلفيات وصور أيقونات PSL Gods (Chico, Sean O'Pry, Jordan Barrett, Gigachad)
+          # 2.1 تحميل صور وخلفيات PSL Gods
           $Images = @{
               "Main_Wallpaper.jpg"   = "https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg"
               "Chico_Lachowski.jpg"  = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg"
@@ -92,7 +96,7 @@ jobs:
               try { $Client.DownloadFile($Images[$img], $Target) } catch {}
           }
 
-          # 2.2 تعيين خلفية الشاشة الرسمية (Chiseled Aesthetic Wallpaper)
+          # 2.2 تعيين خلفية الشاشة الرسمية
           $WallpaperPath = Join-Path $PSLDir "Main_Wallpaper.jpg"
           if (Test-Path $WallpaperPath) {
               Add-Type -TypeDefinition @"
@@ -107,11 +111,11 @@ jobs:
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
           }
 
-          # 2.3 تفعيل المظهر الداكن الحاد (Dark Slate Theme)
+          # 2.3 تفعيل المظهر الداكن
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
-          # 2.4 سكريبت نصائح Looksmaxxing ومولد تقييم الملامح على سطح المكتب
+          # 2.4 سكريبت نصائح Looksmaxxing على سطح المكتب
           $GuideScript = @'
           Write-Host "==========================================================" -ForegroundColor Cyan
           Write-Host "         LOOKSMAXXING / PSL GODS WORKSTATION 2026         " -ForegroundColor Yellow
@@ -128,116 +132,87 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path $DesktopPath 'Looksmaxxing_Mantra.ps1'), $GuideScript, [System.Text.Encoding]::UTF8)
 
       # =========================================================================
-      # 3. إطلاق النفق الفوري والمراقبة الحية
+      # 3. تثبيت وتشغيل نفق Ngrok فائق السرعة
       # =========================================================================
-      - name: Launch High-Speed Direct Tunnel
-        shell: bash
+      - name: Launch Fast Ngrok Tunnel & Watchdog
+        shell: powershell
         run: |
-          python -u - << 'EOF'
-          import subprocess
-          import time
-          import re
-          import os
-          import sys
-          import urllib.request
-          import zipfile
+          $ErrorActionPreference = 'SilentlyContinue'
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          if hasattr(sys.stdout, 'reconfigure'):
-              sys.stdout.reconfigure(encoding='utf-8')
+          $NgrokToken = '${{ github.event.inputs.ngrok_token }}'
+          $Password = '${{ github.event.inputs.rdp_password }}'
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
-          password = "${{ github.event.inputs.rdp_password }}" or "half"
-          rdp_address = None
+          # 3.1 تحميل وفك ضغط Ngrok الرسمي
+          Write-Host "[*] Downloading and configuring Ngrok v3..." -ForegroundColor Cyan
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive -Path "ngrok.zip" -DestinationPath "." -Force
 
-          print("[*] Launching Primary TCP Tunnel Engine (Pinggy Direct Stream)...")
-          ssh_cmd = [
-              "ssh",
-              "-T",
-              "-p", "443",
-              "-R", "0:localhost:3389",
-              "-o", "StrictHostKeyChecking=no",
-              "-o", "ServerAliveInterval=10",
-              "-o", "ServerAliveCountMax=120",
-              "-o", "TCPKeepAlive=yes",
-              "tcp@a.pinggy.io"
-          ]
+          # 3.2 تسجيل التوكن وبدء النفق
+          .\ngrok.exe config add-authtoken $NgrokToken
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -RedirectStandardOutput "ngrok.log" -WindowStyle Hidden
 
-          proc = subprocess.Popen(
-              ssh_cmd,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1,
-              encoding='utf-8',
-              errors='replace'
-          )
+          # 3.3 استخراج عنوان الاتصال عبر Ngrok API
+          $rdpAddress = $null
+          $attempts = 0
+          while ($attempts -lt 20 -and -not $rdpAddress) {
+              Start-Sleep -Seconds 2
+              $attempts++
+              try {
+                  $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
+                  if ($response.tunnels -and $response.tunnels.Count -gt 0) {
+                      $rdpAddress = $response.tunnels[0].public_url.Replace("tcp://", "")
+                  }
+              } catch {
+                  Write-Host "[*] Negotiating Ngrok tunnel endpoint (Attempt $attempts/20)..." -ForegroundColor Yellow
+              }
+          }
 
-          start_t = time.time()
-          while time.time() - start_t < 20:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              clean = line.strip()
-              match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
-              if match:
-                  rdp_address = match.group(1)
-                  break
+          if (-not $rdpAddress) {
+              Write-Host "[!] Failed to establish Ngrok tunnel. Inspecting logs:" -ForegroundColor Red
+              if (Test-Path "ngrok.log") { Get-Content "ngrok.log" }
+              exit 1
+          }
 
-          # بديل Bore الاحتياطي
-          if not rdp_address:
-              print("[!] Switching to Bore Failover...")
-              try:
-                  url = "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip"
-                  urllib.request.urlretrieve(url, "bore.zip")
-                  with zipfile.ZipFile("bore.zip", 'r') as zip_ref:
-                      zip_ref.extractall(".")
-                  
-                  bore_proc = subprocess.Popen(
-                      [".\\bore.exe", "local", "3389", "--to", "bore.pub"],
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.STDOUT,
-                      text=True,
-                      bufsize=1
-                  )
-                  
-                  b_start = time.time()
-                  while time.time() - b_start < 15:
-                      b_line = bore_proc.stdout.readline()
-                      if not b_line:
-                          continue
-                      b_match = re.search(r"listening at bore\.pub:([0-9]+)", b_line)
-                      if b_match:
-                          rdp_address = f"bore.pub:{b_match.group(1)}"
-                          proc = bore_proc
-                          break
-              except Exception as e:
-                  print(f"[!] Fallback error: {e}")
+          # 3.4 طباعة بيانات الاتصال
+          Write-Host ""
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "  🗿 NGROK LOOKSMAXXING WORKSTATION ONLINE & READY             " -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "  Address  : $rdpAddress" -ForegroundColor Yellow
+          Write-Host "  Username : runneradmin" -ForegroundColor Cyan
+          Write-Host "  Password : $Password" -ForegroundColor Cyan
+          Write-Host "  Theme    : PSL Gods / Sharp Dark Aesthetic" -ForegroundColor Magenta
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host ""
 
-          if not rdp_address:
-              print("[X] Failed to establish tunnel.")
-              sys.exit(1)
+          # 3.5 كتابة ملخص الجلسة في GitHub Actions
+          if ($env:GITHUB_STEP_SUMMARY) {
+              $SummaryMarkdown = @"
+          # 🗿 Ngrok Looksmaxxing Windows RDP Session
 
-          print("\n" + "=" * 60)
-          print("⚡ LOOKSMAXXING WORKSTATION ONLINE & READY")
-          print(f"  Host / Address : {rdp_address}")
-          print("  Username       : runneradmin")
-          print(f"  Password       : {password}")
-          print("  Theme          : PSL Gods / Sharp Dark Aesthetic")
-          print("=" * 60 + "\n")
+          ### 🚀 Connection Credentials
+          | Parameter | Value |
+          | :--- | :--- |
+          | **Computer / Host** | ``$rdpAddress`` |
+          | **Username** | ``runneradmin`` |
+          | **Password** | ``$Password`` |
+          | **Tunnel Provider** | Ngrok Direct TCP Port 3389 |
+          | **Desktop Theme** | PSL Gods Aesthetic Archive |
 
-          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_file:
-              with open(summary_file, "w", encoding="utf-8") as f:
-                  f.write("# 🗿 Looksmaxxing Enterprise Cloud RDP\n\n")
-                  f.write(f"* **Host / Address:** `{rdp_address}`\n")
-                  f.write("* **Username:** `runneradmin`\n")
-                  f.write(f"* **Password:** `{password}`\n")
-                  f.write("* **Desktop Theme:** PSL Gods Aesthetic Archive\n")
+          ### 💡 Quick Run Command (Windows CMD):
+          ``mstsc /v:$rdpAddress``
+          "@
+              [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
+          }
 
-          max_time = 345
-          elapsed = 0
-          while elapsed < max_time and proc.poll() is None:
-              time.sleep(60)
-              elapsed += 1
-              if elapsed % 10 == 0:
-                  print(f"[*] Session Uptime: {elapsed} / {max_time} minutes active")
-          EOF
+          # 3.6 إبقاء الجلسة نشطة لمدة 6 ساعات
+          $minutes = 0
+          while ($minutes -lt 345) {
+              Start-Sleep -Seconds 60
+              $minutes++
+              if ($minutes % 10 -eq 0) {
+                  Write-Host "[*] Session Heartbeat: $minutes / 345 minutes active (Stable)" -ForegroundColor Gray
+              }
+          }
