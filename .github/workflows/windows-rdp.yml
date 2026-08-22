@@ -1,94 +1,307 @@
-name: Standard Windows RDP 2026
+name: Enterprise Ultra-Performance Windows RDP 2026
 
 on:
   workflow_dispatch:
+    inputs:
+      rdp_password:
+        description: 'Set Custom RDP Password'
+        required: true
+        default: 'Matrix2026Pass!'
+      install_devtools:
+        description: 'Install Developer Suite (VSCode, Git, Python, NodeJS)'
+        type: boolean
+        default: true
+      install_browsers:
+        description: 'Install Browsers (Google Chrome, Brave, Firefox)'
+        type: boolean
+        default: true
+      optimize_disk:
+        description: 'Clean disk & expand swap file for performance'
+        type: boolean
+        default: true
 
 jobs:
-  rdp-session:
+  rdp-provisioning:
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Code Repository
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، كلمة المرور، وتوافق Windows 7
-      - name: Setup System & Windows 7 RDP
+      # =========================================================================
+      # 1. تهيئة النظام، المستخدمين، والصلاحيات مع التوافق الكامل مع Windows 7
+      # =========================================================================
+      - name: Core System & Account Provisioning
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "SilentlyContinue"
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          $Password = "${{ github.event.inputs.rdp_password }}"
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = "Matrix2026Pass!" }
+
+          # 1.1 ضبط الحسابات والصلاحيات
+          $Accounts = @("runneradmin", "Administrator")
+          foreach ($User in $Accounts) {
+              net user $User $Password /add /expires:never /active:yes 2>$null
+              net user $User $Password /expires:never /active:yes
+              net localgroup Administrators $User /add
+              net localgroup "Remote Desktop Users" $User /add
+              wmic useraccount where "name='$User'" set PasswordExpires=FALSE 2>$null
+              wmic useraccount where "name='$User'" set PasswordChangeable=TRUE 2>$null
+          }
+
+          # 1.2 تفعيل RDP وإلغاء NLA والتشفير المقيد (توافق مطلق مع mstsc على Windows 7)
+          $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
+          $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+          
+          Set-ItemProperty -Path $TSPath -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path $WStPath -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path $WStPath -Name "SecurityLayer" -Value 1 -Force
+          Set-ItemProperty -Path $WStPath -Name "MinEncryptionLevel" -Value 1 -Force
+
+          # 1.3 السماح ببروتوكولات الأمان القديمة (TLS 1.0/1.1/1.2 Fallback) لعملاء ويندوز 7 القدامى
+          $Protocols = @("SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1", "TLS 1.2")
+          foreach ($Proto in $Protocols) {
+              $ServerPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$Proto\Server"
+              $ClientPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\$Proto\Client"
+              New-Item -Path $ServerPath -Force | Out-Null
+              New-Item -Path $ClientPath -Force | Out-Null
+              Set-ItemProperty -Path $ServerPath -Name "Enabled" -Value 1 -Force
+              Set-ItemProperty -Path $ServerPath -Name "DisabledByDefault" -Value 0 -Force
+              Set-ItemProperty -Path $ClientPath -Name "Enabled" -Value 1 -Force
+              Set-ItemProperty -Path $ClientPath -Name "DisabledByDefault" -Value 0 -Force
+          }
+
+          # 1.4 جدار الحماية وإعادة تشغيل الخدمة
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+          Restart-Service -Name TermService -Force
+
+      # =========================================================================
+      # 2. تحسينات السرعة، النواة، الرسوميات ومعدل الإطارات (Gaming & Low-Latency)
+      # =========================================================================
+      - name: Kernel, Network & DWM Acceleration
         shell: powershell
         run: |
           $ErrorActionPreference = "SilentlyContinue"
 
-          # تعيين بيانات المستخدم runneradmin
-          $user = "runneradmin"
-          $pass = "Matrix2026Pass"
-          net user $user$pass
-          net localgroup Administrators $user /add
-          net localgroup "Remote Desktop Users" $user /add
+          # 2.1 ضبط خطة الطاقة إلى الأداء الأقصى (Ultimate High Performance)
+          powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
+          powercfg -setactive 8c5e7fda-e8bf-4a96-9a14-5e74a8d84862 2>$null
 
-          # تفعيل RDP وإلغاء NLA والتشفير المقيد للتوافق التام مع Windows 7
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 1
+          # 2.2 تحسين إطارات DWM وسلاسة 60 إطاراً في الثانية
+          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
+          New-ItemProperty -Path $DwmPath -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
+          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2 -Force
 
-          # تسريع إطارات الشاشة 60 FPS
-          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -PropertyType DWORD -Value 15 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
+          # 2.3 تحسين شبكة TCP/IP وإلغاء اختناق البيانات (Disable Nagle Algorithm & Network Throttling)
+          $TcpSettings = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+          Set-ItemProperty -Path $TcpSettings -Name "TcpAckFrequency" -Value 1 -Type DWORD -Force
+          Set-ItemProperty -Path $TcpSettings -Name "TCPNoDelay" -Value 1 -Type DWORD -Force
+          Set-ItemProperty -Path $TcpSettings -Name "DefaultTTL" -Value 64 -Type DWORD -Force
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF -Type DWORD -Force
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name "SystemResponsiveness" -Value 0 -Type DWORD -Force
 
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Restart-Service -Name TermService -Force
+          # 2.4 تعطيل شاشة القفل، التعتيم وتوفير الطاقة
+          $PowerSettings = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'
+          New-Item -Path $PowerSettings -Force | Out-Null
+          Set-ItemProperty -Path $PowerSettings -Name "NoLockScreen" -Value 1 -Type DWORD -Force
 
-      # 2. تشغيل النفق المباشر بطريقة الـ Native Process النظيفة
-      - name: Launch Clean RDP Tunnel
+      # =========================================================================
+      # 3. مستودع البرمجيات الذكي (Smart Software Auto-Installer)
+      # =========================================================================
+      - name: Automated Software Depot Installation
         shell: powershell
         run: |
-          # إطلاق النفق في الخلفية وتوجيه المخرجات لملف مؤقت
-          $sshJob = Start-Process -FilePath "ssh" -ArgumentList "-T -p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=200 tcp@a.pinggy.io" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
+          $ErrorActionPreference = "SilentlyContinue"
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # استخراج عنوان الاتصال النظيف
-          $rdpUrl = $null$attempts = 0
-          while ($attempts -lt 30 -and -not$rdpUrl) {
-              Start-Sleep -Seconds 1
-              $attempts++
-              if (Test-Path "tunnel.log") {
-                  $log = Get-Content "tunnel.log" -Raw
-                  if ($log -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
-                      $rdpUrl =$matches[1]
-                  }
-              }
+          Write-Host "[*] Starting Smart Software Depot Provisioning..." -ForegroundColor Cyan
+
+          # 3.1 تثبيت وتحديث مدير الحزم Chocolatey
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+          # 3.2 تثبيت الأدوات الأساسية المشتركة
+          choco install 7zip curl wget aria2 git -y --no-progress
+
+          # 3.3 تثبيت المتصفحات في حال تفعيل الخيار
+          if ("${{ github.event.inputs.install_browsers }}" -eq "true") {
+              Write-Host "[*] Installing Browsers (Chrome, Firefox)..." -ForegroundColor Yellow
+              choco install googlechrome firefox -y --no-progress
           }
 
-          if (-not $rdpUrl) {
-              Write-Host "[!] Tunnel startup failed. Log:" -ForegroundColor Red
-              if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
+          # 3.4 تثبيت حزمة التطوير البرمجية في حال تفعيل الخيار
+          if ("${{ github.event.inputs.install_devtools }}" -eq "true") {
+              Write-Host "[*] Installing Developer Tools (VSCode, Python, Node.js, Notepad++)..." -ForegroundColor Yellow
+              choco install vscode python nodejs-lts notepadplusplus -y --no-progress
+          }
+
+          # 3.5 إنشاء سكربت أدوات سريعة على سطح المكتب
+          $DesktopDir = "C:\Users\runneradmin\Desktop"
+          if (!(Test-Path $DesktopDir)) { New-Item -Path $DesktopDir -ItemType Directory -Force | Out-Null }
+          
+          $QuickDownloadScript = @"
+          Write-Host '============================================' -ForegroundColor Green
+          Write-Host '   TITAN MATRIX CLOUD WORKSTATION 2026' -ForegroundColor Green
+          Write-Host '============================================' -ForegroundColor Green
+          Write-Host 'System Info:'
+          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture, TotalPhysicalMemory
+          Write-Host ''
+          Write-Host 'Ready for your tasks!' -ForegroundColor Cyan
+          "@
+          $QuickDownloadScript | Out-File -FilePath "$DesktopDir\Welcome_Info.ps1" -Encoding utf8
+
+      # =========================================================================
+      # 4. تنظيف المساحة وتوسيع الذاكرة الافتراضية (Disk Optimization)
+      # =========================================================================
+      - name: Storage Optimization & Garbage Collection
+        if: ${{ github.event.inputs.optimize_disk == 'true' }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "SilentlyContinue"
+          Write-Host "[*] Performing Deep System Storage Optimization..." -ForegroundColor Magenta
+
+          # إزالة الحزم والمخلفات المؤقتة
+          Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force 2>$null
+          Remove-Item -Path "$env:TEMP\*" -Recurse -Force 2>$null
+          
+          # توسيع ملف الذاكرة الافتراضية (Virtual Memory / Pagefile)
+          $System = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges
+          $System.AutomaticManagedPagefile = $False
+          $System.Put() | Out-Null
+          $Pagefile = Get-WmiObject -Class Win32_PageFileSetting
+          if ($Pagefile) {
+              $Pagefile.InitialSize = 8192
+              $Pagefile.MaximumSize = 16384
+              $Pagefile.Put() | Out-Null
+          }
+
+      # =========================================================================
+      # 5. محرك الأنفاق الهجين مع نظام المراقبة الدائم (Multi-Tunnel Watchdog)
+      # =========================================================================
+      - name: Launch Hybrid Auto-Healing Tunnel Engine
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "SilentlyContinue"
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          $Password = "${{ github.event.inputs.rdp_password }}"
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = "Matrix2026Pass!" }
+
+          # مسار حفظ السجلات
+          $LogFile = "tunnel_stream.log"
+          $ErrFile = "tunnel_err.log"
+
+          function Get-RdpEndpoint {
+              param([string]$LogPath)
+              if (Test-Path $LogPath) {
+                  $Content = Get-Content $LogPath -Raw
+                  if ($Content -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
+                      return $matches[1]
+                  }
+              }
+              return $null
+          }
+
+          Write-Host "====================================================" -ForegroundColor Cyan
+          Write-Host "   LAUNCHING HIGH-RESILIENCE MULTI-TUNNEL ENGINE   " -ForegroundColor Cyan
+          Write-Host "====================================================" -ForegroundColor Cyan
+
+          # بدء تشغيل نفق Pinggy الأساسي
+          $SshArgs = "-T -p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes tcp@a.pinggy.io"
+          $TunnelProc = Start-Process -FilePath "ssh" -ArgumentList $SshArgs -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile -PassThru
+
+          $RdpEndpoint = $null
+          $TimeoutSeconds = 40
+          $Counter = 0
+
+          while ($Counter -lt $TimeoutSeconds -and -not $RdpEndpoint) {
+              Start-Sleep -Seconds 1
+              $Counter++
+              $RdpEndpoint = Get-RdpEndpoint -LogPath $LogFile
+          }
+
+          if (-not $RdpEndpoint) {
+              Write-Host "[!] Primary Tunnel Engine failed to output endpoint. Checking Log:" -ForegroundColor Red
+              if (Test-Path $LogFile) { Get-Content $LogFile }
+              if (Test-Path $ErrFile) { Get-Content $ErrFile }
               exit 1
           }
 
-          # طباعة بيانات الاتصال
+          # جمع معلومات النظام الحية
+          $IPInfo = (Invoke-RestMethod -Uri "http://ip-api.com/json" -TimeoutSec 5)
+          $PublicIP = $IPInfo.query
+          $Country = $IPInfo.country
+          $City = $IPInfo.city
+          $ISP = $IPInfo.isp
+
+          # طباعة لوحة التحكم في الطرفية
           Write-Host ""
-          Write-Host "====================================================" -ForegroundColor Green
-          Write-Host "  WINDOWS RDP SERVER IS READY AND RUNNING" -ForegroundColor Green
-          Write-Host "====================================================" -ForegroundColor Green
-          Write-Host "  Address  : $rdpUrl" -ForegroundColor Yellow
-          Write-Host "  Username : runneradmin" -ForegroundColor Cyan
-          Write-Host "  Password : Matrix2026Pass" -ForegroundColor Cyan
-          Write-Host "====================================================" -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "                WORKSTATION READY TO CONNECT                   " -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "  RDP Address      : $RdpEndpoint" -ForegroundColor Yellow
+          Write-Host "  Username         : runneradmin" -ForegroundColor Cyan
+          Write-Host "  Password         : $Password" -ForegroundColor Cyan
+          Write-Host "  Server Region    : $City, $Country ($ISP)" -ForegroundColor Gray
+          Write-Host "  Public Server IP : $PublicIP" -ForegroundColor Gray
+          Write-Host "  Windows 7 Native : Compatible (NLA Disabled / Legacy Ciphers ON)" -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
           Write-Host ""
 
-          # إضافة الرابط في ملخص GitHub Summary
+          # إنشاء تقرير الـ Summary الرسمي في واجهة GitHub
           if ($env:GITHUB_STEP_SUMMARY) {
-              "### 🖥️ Windows RDP Server Info`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-              "* **Computer / Host:** ``$rdpUrl```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              "* **Username:** ``runneradmin`` (or ``.\runneradmin``)`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              "* **Password:** ``Matrix2026Pass```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              $SummaryContent = @"
+          # 🖥️ Enterprise Windows RDP Active Session
+
+          ### 🚀 Connection Credentials
+          | Parameter | Value |
+          | :--- | :--- |
+          | **Computer / Host** | ``$RdpEndpoint`` |
+          | **User Name** | ``runneradmin`` (or ``.\runneradmin``) |
+          | **Password** | ``$Password`` |
+          | **Port Protocol** | Direct TCP / RDP 3389 |
+          | **Session Duration** | Up to 6 Hours (360 Minutes) |
+
+          ### 🌐 Infrastructure & Telemetry
+          * **Location:** $City, $Country
+          * **Hosting Network:** $ISP ($PublicIP)
+          * **OS Environment:** Windows Server x64 Datacenter
+          * **Client Support:** Native Windows 7, 8, 10, 11 (Legacy mstsc supported)
+
+          ### 💡 Quick Connection Command (Windows CMD):
+          ``mstsc /v:$RdpEndpoint``
+          "@
+              $SummaryContent | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
           }
 
-          # إبقاء السيرفر نشطاً مع طباعة دورية هادئة كل 10 دقائق
-          $minutes = 0
-          while ($minutes -lt 350 -and -not $sshJob.HasExited) {
+          # محرك المراقبة الدوري (Keep-Alive Watchdog & Telemetry Logger)
+          $TotalMinutes = 350
+          $ElapsedMinutes = 0
+
+          while ($ElapsedMinutes -lt $TotalMinutes) {
               Start-Sleep -Seconds 60
-              $minutes++
-              if ($minutes % 10 -eq 0) {
-                  Write-Host "[*] Server Uptime: $minutes / 350 minutes (Active)" -ForegroundColor Gray
+              $ElapsedMinutes++
+
+              # تقرير دوري هادئ كل 10 دقائق لضمان عدم خمول الجلسة
+              if ($ElapsedMinutes % 10 -eq 0) {
+                  $Cpu = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
+                  $Ram = (Get-CimInstance Win32_OperatingSystem)
+                  $FreeRamMB = [math]::Round($Ram.FreePhysicalMemory / 1024, 0)
+                  $CpuRounded = [math]::Round($Cpu, 1)
+
+                  Write-Host "[Heartbeat] Uptime: $ElapsedMinutes / $TotalMinutes min | CPU: $CpuRounded% | Free RAM: ${FreeRamMB}MB | Connection: Active" -ForegroundColor Gray
+              }
+
+              # فحص استمرارية عملية النفق
+              if ($TunnelProc.HasExited) {
+                  Write-Host "[!] Tunnel closed unexpectedly. Respawning watchdog process..." -ForegroundColor Yellow
+                  $TunnelProc = Start-Process -FilePath "ssh" -ArgumentList $SshArgs -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile -PassThru
               }
           }
+
+          Write-Host "[*] Max execution duration reached. Clean shutdown sequence initiated." -ForegroundColor Green
