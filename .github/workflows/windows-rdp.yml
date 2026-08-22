@@ -1,4 +1,4 @@
-name: Stable Windows RDP 2026
+name: Standard Windows RDP 2026
 
 on:
   workflow_dispatch:
@@ -6,24 +6,26 @@ on:
 jobs:
   rdp-session:
     runs-on: windows-latest
-    timeout-minutes: 350
+    timeout-minutes: 360
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. تهيئة النظام، المستخدم runneradmin وتوافق Windows 7
-      - name: Configure System & Windows 7 RDP
+      # 1. تهيئة النظام، كلمة المرور، وتوافق Windows 7
+      - name: Setup System & Windows 7 RDP
         shell: powershell
         run: |
           $ErrorActionPreference = "SilentlyContinue"
-          
-          # تعيين كلمة المرور وتفعيل الصلاحيات
-          net user runneradmin Matrix2026Pass
-          net localgroup Administrators runneradmin /add
-          net localgroup "Remote Desktop Users" runneradmin /add
 
-          # تفعيل RDP وإلغاء NLA والتشفير المقيد للتوافق مع Windows 7
+          # تعيين بيانات المستخدم runneradmin
+          $user = "runneradmin"
+          $pass = "Matrix2026Pass"
+          net user $user$pass
+          net localgroup Administrators $user /add
+          net localgroup "Remote Desktop Users" $user /add
+
+          # تفعيل RDP وإلغاء NLA والتشفير المقيد للتوافق التام مع Windows 7
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
@@ -36,95 +38,57 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Restart-Service -Name TermService -Force
 
-      # 2. تشغيل نفق TCP بنظام التجديد التلقائي وترميز نصي متوافق
-      - name: Launch Persistent Tunnel Watchdog
-        shell: bash
+      # 2. تشغيل النفق المباشر بطريقة الـ Native Process النظيفة
+      - name: Launch Clean RDP Tunnel
+        shell: powershell
         run: |
-          python -u - << 'EOF'
-          import subprocess
-          import time
-          import re
-          import os
-          import sys
+          # إطلاق النفق في الخلفية وتوجيه المخرجات لملف مؤقت
+          $sshJob = Start-Process -FilePath "ssh" -ArgumentList "-T -p 443 -R 0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=200 tcp@a.pinggy.io" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -PassThru
 
-          # فرض ترميز UTF-8 لمنع أخطاء الطباعة
-          if hasattr(sys.stdout, 'reconfigure'):
-              sys.stdout.reconfigure(encoding='utf-8')
+          # استخراج عنوان الاتصال النظيف
+          $rdpUrl = $null$attempts = 0
+          while ($attempts -lt 30 -and -not$rdpUrl) {
+              Start-Sleep -Seconds 1
+              $attempts++
+              if (Test-Path "tunnel.log") {
+                  $log = Get-Content "tunnel.log" -Raw
+                  if ($log -match "tcp://([a-zA-Z0-9\.\-]+:[0-9]+)") {
+                      $rdpUrl =$matches[1]
+                  }
+              }
+          }
 
-          max_duration_minutes = 345
-          start_global = time.time()
+          if (-not $rdpUrl) {
+              Write-Host "[!] Tunnel startup failed. Log:" -ForegroundColor Red
+              if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
+              exit 1
+          }
 
-          def launch_tunnel():
-              print("\n[*] Initializing Keep-Alive Tunnel...")
-              cmd = [
-                  "ssh",
-                  "-T",
-                  "-p", "443",
-                  "-R", "0:localhost:3389",
-                  "-o", "StrictHostKeyChecking=no",
-                  "-o", "ServerAliveInterval=5",
-                  "-o", "ServerAliveCountMax=60",
-                  "-o", "TCPKeepAlive=yes",
-                  "tcp@a.pinggy.io"
-              ]
-              return subprocess.Popen(
-                  cmd,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-                  text=True,
-                  bufsize=1,
-                  encoding='utf-8',
-                  errors='replace'
-              )
+          # طباعة بيانات الاتصال
+          Write-Host ""
+          Write-Host "====================================================" -ForegroundColor Green
+          Write-Host "  WINDOWS RDP SERVER IS READY AND RUNNING" -ForegroundColor Green
+          Write-Host "====================================================" -ForegroundColor Green
+          Write-Host "  Address  : $rdpUrl" -ForegroundColor Yellow
+          Write-Host "  Username : runneradmin" -ForegroundColor Cyan
+          Write-Host "  Password : Matrix2026Pass" -ForegroundColor Cyan
+          Write-Host "====================================================" -ForegroundColor Green
+          Write-Host ""
 
-          while (time.time() - start_global) / 60 < max_duration_minutes:
-              proc = launch_tunnel()
-              rdp_address = None
-              tunnel_start = time.time()
+          # إضافة الرابط في ملخص GitHub Summary
+          if ($env:GITHUB_STEP_SUMMARY) {
+              "### 🖥️ Windows RDP Server Info`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+              "* **Computer / Host:** ``$rdpUrl```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "* **Username:** ``runneradmin`` (or ``.\runneradmin``)`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "* **Password:** ``Matrix2026Pass```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
 
-              while time.time() - tunnel_start < 25:
-                  line = proc.stdout.readline()
-                  if not line:
-                      continue
-                  clean_line = line.strip()
-                  print(f"[Engine] {clean_line}")
-                  match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean_line)
-                  if match:
-                      rdp_address = match.group(1)
-                      break
-
-              if rdp_address:
-                  print("\n" + "=" * 60)
-                  print("[+] RDP SESSION READY & ACTIVE")
-                  print(f" Computer / Address : {rdp_address}")
-                  print(" Username           : runneradmin")
-                  print(" Password           : Matrix2026Pass")
-                  print("=" * 60 + "\n")
-
-                  summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-                  if summary_file:
-                      with open(summary_file, "w", encoding="utf-8") as f:
-                          f.write("### Active Windows RDP Session\n\n")
-                          f.write(f"* **Computer:** `{rdp_address}`\n")
-                          f.write("* **Username:** `runneradmin`\n")
-                          f.write("* **Password:** `Matrix2026Pass`\n")
-
-                  # مراقبة الجلسة والطباعة المستمرة لمنع الإغلاق
-                  while proc.poll() is None and (time.time() - start_global) / 60 < max_duration_minutes:
-                      line = proc.stdout.readline()
-                      if line:
-                          print(f"[Keep-Alive] {line.strip()}")
-                      time.sleep(1)
-
-                  print("[!] Tunnel disconnected. Reconnecting automatically in 3 seconds...")
-              else:
-                  print("[!] Endpoint parsing retry in 5 seconds...")
-
-              try:
-                  proc.kill()
-              except:
-                  pass
-              time.sleep(3)
-
-          print("[*] Max session duration reached.")
-          EOF
+          # إبقاء السيرفر نشطاً مع طباعة دورية هادئة كل 10 دقائق
+          $minutes = 0
+          while ($minutes -lt 350 -and -not $sshJob.HasExited) {
+              Start-Sleep -Seconds 60
+              $minutes++
+              if ($minutes % 10 -eq 0) {
+                  Write-Host "[*] Server Uptime: $minutes / 350 minutes (Active)" -ForegroundColor Gray
+              }
+          }
