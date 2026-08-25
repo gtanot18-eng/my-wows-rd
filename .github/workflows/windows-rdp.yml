@@ -1,4 +1,4 @@
-name: Titan Anti-Freeze Windows RDP 2026
+name: Titan Looksmaxxing PSL Gods Megapack Windows RDP 2026
 
 on:
   workflow_dispatch:
@@ -18,9 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة الحساب السريعة، كلمة المرور (half)، وتوافق Windows 7
+      # 1. تهيئة النظام، المستخدم runneradmin وتوافق Windows 7 (كلمة المرور: half)
       # =========================================================================
-      - name: Configure System & Windows 7 RDP
+      - name: Stage 1 - Account & Windows 7 Legacy RDP Setup
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
@@ -39,7 +39,7 @@ jobs:
               Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
           }
 
-          # 1.2 تعيين كلمة المرور
+          # 1.2 تعيين كلمة المرور والمجموعات
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
@@ -47,7 +47,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق التام مع mstsc و xfreerdp
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -55,7 +55,7 @@ jobs:
           Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
           Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
 
-          # 1.4 تسريع 60 FPS وTCP NoDelay
+          # 1.4 تفعيل 60 FPS وإلغاء اختناق الماوس والشبكة
           $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
           Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
@@ -66,32 +66,53 @@ jobs:
           Restart-Service -Name TermService -Force
 
       # =========================================================================
-      # 2. تطبيق ثيم Looksmaxxing وتحميل معرض صور PSL Gods على سطح المكتب
+      # 2. حزمة Looksmaxxing الشاملة: معرض صور وفيديوهات PSL Gods
       # =========================================================================
-      - name: Apply Looksmaxxing Theme & PSL Gods Archive
+      - name: Stage 2 - Deploy Looksmaxxing Theme, Wallpapers, Videos & PSL Archive
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
           $DesktopPath = 'C:\Users\runneradmin\Desktop'
-          $PSLDir = Join-Path $DesktopPath 'PSL_Gods_Archive'
-          if (!(Test-Path $PSLDir)) { New-Item -Path $PSLDir -ItemType Directory -Force | Out-Null }
+          $MainDir = Join-Path $DesktopPath 'Looksmaxxing_PSL_Hub'
+          $ImagesDir = Join-Path $MainDir 'PSL_Gods_Images'
+          $VideosDir = Join-Path $MainDir 'Aesthetic_Videos_Edits'
 
+          if (!(Test-Path $ImagesDir)) { New-Item -Path $ImagesDir -ItemType Directory -Force | Out-Null }
+          if (!(Test-Path $VideosDir)) { New-Item -Path $VideosDir -ItemType Directory -Force | Out-Null }
+
+          # 2.1 تحميل أرشيف صور PSL Gods بدقة عالية
           $Images = @{
-              'Main_Wallpaper.jpg'   = 'https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg'
-              'Chico_Lachowski.jpg'  = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg'
-              'Sean_OPry.jpg'        = 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Sean_O%27Pry_2014.jpg/800px-Sean_O%27Pry_2014.jpg'
-              'Jordan_Barrett.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Jordan_Barrett_2017.jpg/800px-Jordan_Barrett_2017.jpg'
+              '01_David_Gandy_Sharp.jpg'       = 'https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg'
+              '02_Chico_Lachowski_Prime.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg'
+              '03_Jordan_Barrett_Hunter.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Jordan_Barrett_2017.jpg/800px-Jordan_Barrett_2017.jpg'
+              '04_Sean_OPry_Jawline.jpg'       = 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Sean_O%27Pry_2014.jpg/800px-Sean_O%27Pry_2014.jpg'
+              '05_Alain_Delon_Vintage.jpg'      = 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Alain_Delon_1962.jpg/800px-Alain_Delon_1962.jpg'
+              '06_Greek_God_Sculpture.jpg'     = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1920&q=80'
+              '07_Aesthetic_Chiseled_Hero.jpg' = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1920&q=80'
           }
 
           $Client = New-Object System.Net.WebClient
           foreach ($img in $Images.Keys) {
-              $Target = Join-Path $PSLDir $img
+              $Target = Join-Path $ImagesDir $img
               try { $Client.DownloadFile($Images[$img], $Target) } catch {}
           }
 
-          $WallpaperPath = Join-Path $PSLDir 'Main_Wallpaper.jpg'
+          # 2.2 تحميل فيديوهات Looksmaxxing و Aesthetic Clips عينة
+          $SampleVideos = @{
+              'Aesthetic_Statue_Loop.mp4'   = 'https://assets.mixkit.co/videos/preview/mixkit-close-up-of-a-classic-sculpture-42525-large.mp4'
+              'Cinematic_Lighting_Face.mp4' = 'https://assets.mixkit.co/videos/preview/mixkit-man-holding-a-neon-light-41549-large.mp4'
+              'Dark_Atmosphere_Motion.mp4'  = 'https://assets.mixkit.co/videos/preview/mixkit-dramatic-portrait-in-a-dark-room-41546-large.mp4'
+          }
+
+          foreach ($vid in $SampleVideos.Keys) {
+              $TargetVid = Join-Path $VideosDir $vid
+              try { $Client.DownloadFile($SampleVideos[$vid], $TargetVid) } catch {}
+          }
+
+          # 2.3 تعيين خلفية الشاشة الأساسية وتفعيل المظهر الليلي
+          $WallpaperPath = Join-Path $ImagesDir '01_David_Gandy_Sharp.jpg'
           if (Test-Path $WallpaperPath) {
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '10' -Force
@@ -101,134 +122,130 @@ jobs:
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
+          # 2.4 سكريبت تحميل مقاطع وفيديوهات تيك توك ويوتيوب بجودة 4K على سطح المكتب
+          $DownloaderScript = @(
+              'Write-Host "==========================================================" -ForegroundColor Cyan',
+              'Write-Host "     LOOKSMAXXING / PSL GODS 4K VIDEO DOWNLOADER         " -ForegroundColor Yellow',
+              'Write-Host "==========================================================" -ForegroundColor Cyan',
+              '$url = Read-Host "Paste YouTube / TikTok / Reels Video URL"',
+              'if ($url) {',
+              '    $outDir = "C:\Users\runneradmin\Desktop\Looksmaxxing_PSL_Hub\Aesthetic_Videos_Edits\%(title)s.%(ext)s"',
+              '    Write-Host "[*] Downloading in Ultra High Quality..." -ForegroundColor Magenta',
+              '    winget install --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements',
+              '    yt-dlp -f "bestvideo+bestaudio/best" --no-playlist -o $outDir $url',
+              '    Write-Host "[✓] Video saved to Aesthetic_Videos_Edits folder!" -ForegroundColor Green',
+              '}',
+              'Start-Sleep -Seconds 3'
+          )
+          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_PSL_Videos.ps1'), $DownloaderScript, [System.Text.Encoding]::UTF8)
+
+          # 2.5 سكريبت دليل المظهر ومعايير PSL على سطح المكتب
+          $MantraScript = @(
+              'Write-Host "==========================================================" -ForegroundColor Cyan',
+              'Write-Host "              PSL GODS AESTHETIC DIRECTORY                " -ForegroundColor Yellow',
+              'Write-Host "==========================================================" -ForegroundColor Cyan',
+              'Write-Host "[★] Chico Lachowski   : Compact Midface & Positive Canthal Tilt" -ForegroundColor Green',
+              'Write-Host "[★] Jordan Barrett    : High Zygos & Hollow Cheeks" -ForegroundColor Green',
+              'Write-Host "[★] David Gandy       : Forward Facial Growth & Dimorphism" -ForegroundColor Green',
+              'Write-Host "[★] Sean O''Pry        : Hunter Eyes & Angular Gonial Angle" -ForegroundColor Green',
+              'Write-Host ""',
+              'Write-Host "Gallery Location: Desktop\Looksmaxxing_PSL_Hub" -ForegroundColor Magenta',
+              'Write-Host "==========================================================" -ForegroundColor Cyan',
+              'Write-Host "Press any key to close..."',
+              '$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")'
+          )
+          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'PSL_Standards_Info.ps1'), $MantraScript, [System.Text.Encoding]::UTF8)
+
       # =========================================================================
-      # 3. محرك الأنفاق غير القابل للتعليق (Non-Blocking Anti-Freeze Engine)
+      # 3. تشغيل نفق Bore TCP النقي (إقلاع فوري بدون أخطاء وبدون SSH)
       # =========================================================================
-      - name: Launch Anti-Freeze Multi-Tunnel Engine
-        shell: bash
+      - name: Stage 3 - Launch Pure Bore TCP Engine & Live Session Watchdog
+        shell: powershell
         run: |
-          python -u - << 'EOF'
-          import subprocess
-          import time
-          import re
-          import os
-          import sys
-          import threading
-          import queue
+          $ErrorActionPreference = 'SilentlyContinue'
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          if hasattr(sys.stdout, 'reconfigure'):
-              sys.stdout.reconfigure(encoding='utf-8')
+          $Password = '${{ github.event.inputs.rdp_password }}'
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
-          password = "${{ github.event.inputs.rdp_password }}" or "half"
-          max_session_minutes = 350
-          global_start = time.time()
+          # 3.1 تحميل برنامج Bore الثنائي المستقل
+          Write-Host '[*] Fetching Pure Rust TCP Bore Engine...' -ForegroundColor Cyan
+          $zipPath = Join-Path $env:TEMP 'bore.zip'
+          $boreDir = Join-Path $env:TEMP 'bore'
+          $url = 'https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip'
+          (New-Object System.Net.WebClient).DownloadFile($url, $zipPath)
+          Expand-Archive -Path $zipPath -DestinationPath $boreDir -Force
 
-          def enqueue_output(out, q):
-              for line in iter(out.readline, ''):
-                  q.put(line)
-              out.close()
+          $boreExe = Join-Path $boreDir 'bore.exe'
+          $logPath = Join-Path $env:TEMP 'bore.log'
 
-          def try_tunnel(cmd, pattern, timeout_sec=8):
-              proc = subprocess.Popen(
-                  cmd,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-                  text=True,
-                  bufsize=1,
-                  encoding='utf-8',
-                  errors='replace'
-              )
-              q = queue.Queue()
-              t = threading.Thread(target=enqueue_output, args=(proc.stdout, q))
-              t.daemon = True
-              t.start()
+          # 3.2 إطلاق النفق وتوجيه المنفذ 3389
+          $proc = Start-Process -FilePath $boreExe -ArgumentList 'local 3389 --to bore.pub' -RedirectStandardOutput $logPath -RedirectStandardError (Join-Path $env:TEMP 'bore_err.log') -PassThru
 
-              start = time.time()
-              while time.time() - start < timeout_sec:
-                  if proc.poll() is not None:
-                      break
-                  try:
-                      line = q.get_nowait()
-                  except queue.Empty:
-                      time.sleep(0.2)
-                      continue
+          # 3.3 استخراج المنفذ المخصص فورياً
+          $rdpAddress = $null
+          $attempts = 0
+          while ($attempts -lt 25 -and -not $rdpAddress) {
+              Start-Sleep -Seconds 1
+              $attempts++
+              if (Test-Path $logPath) {
+                  $content = Get-Content $logPath -Raw
+                  if ($content -match 'listening at bore\.pub:([0-9]+)') {
+                      $rdpAddress = 'bore.pub:' + $matches[1]
+                  }
+              }
+          }
 
-                  clean = line.strip()
-                  match = re.search(pattern, clean)
-                  if match:
-                      return proc, match.group(1)
-              
-              try:
-                  proc.kill()
-              except:
-                  pass
-              return None, None
+          if (-not $rdpAddress) {
+              Write-Host '[!] Bore tunnel negotiation failed. Logs:' -ForegroundColor Red
+              if (Test-Path $logPath) { Get-Content $logPath }
+              exit 1
+          }
 
-          print("[*] Launching High-Speed Non-Blocking Tunnel Engine...")
+          # 3.4 طباعة بطاقة الاتصال الرسمية
+          Write-Host ''
+          Write-Host '================================================================' -ForegroundColor Green
+          Write-Host '  🗿 LOOKSMAXXING & PSL GODS WINDOWS WORKSTATION IS ONLINE      ' -ForegroundColor Green
+          Write-Host '================================================================' -ForegroundColor Green
+          Write-Host "  RDP Address      : $rdpAddress" -ForegroundColor Yellow
+          Write-Host '  Username         : runneradmin' -ForegroundColor Cyan
+          Write-Host "  Password         : $Password" -ForegroundColor Cyan
+          Write-Host '  Theme            : PSL Gods Megapack (Images & Video Edits)' -ForegroundColor Magenta
+          Write-Host '  Native Support   : Windows 7 (mstsc) & antiX Linux (xfreerdp)' -ForegroundColor Green
+          Write-Host '================================================================' -ForegroundColor Green
+          Write-Host ''
 
-          while (time.time() - global_start) / 60 < max_session_minutes:
-              active_proc = None
-              rdp_address = None
+          # 3.5 حفظ بطاقة الملخص في تبويب GitHub Summary
+          if ($env:GITHUB_STEP_SUMMARY) {
+              $SummaryMarkdown = @"
+          # 🗿 Looksmaxxing PSL Gods Enterprise RDP
 
-              # 1. المحاولة الأولى: Pinggy Direct (سريع جداً وموثوق)
-              print("[*] Connecting via Primary Fast-Stream Tunnel...")
-              pinggy_cmd = [
-                  "ssh", "-T", "-p", "443", "-R", "0:localhost:3389",
-                  "-o", "StrictHostKeyChecking=no",
-                  "-o", "ServerAliveInterval=10",
-                  "-o", "ServerAliveCountMax=120",
-                  "-o", "TCPKeepAlive=yes",
-                  "tcp@a.pinggy.io"
-              ]
-              active_proc, rdp_address = try_tunnel(pinggy_cmd, r#"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)"#, timeout_sec=10)
+          ### 🚀 Connection Credentials
+          | Parameter | Value |
+          | :--- | :--- |
+          | **Host / Address** | ``$rdpAddress`` |
+          | **Username** | ``runneradmin`` |
+          | **Password** | ``$Password`` |
+          | **Hub Location** | ``Desktop\Looksmaxxing_PSL_Hub`` |
 
-              # 2. المحاولة الثانية: Serveo (إذا تعطل الأول مع حماية من التعليق 6 ثوانٍ)
-              if not rdp_address:
-                  print("[!] Switching to Secondary Tunnel Engine...")
-                  serveo_cmd = [
-                      "ssh", "-T", "-R", "0:localhost:3389",
-                      "-o", "StrictHostKeyChecking=no",
-                      "-o", "ServerAliveInterval=10",
-                      "serveo.net"
-                  ]
-                  active_proc, rdp_address = try_tunnel(serveo_cmd, r#"Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)"#, timeout_sec=6)
+          ### 💻 antiX Linux Connection Command:
+          ``xfreerdp /v:$rdpAddress /u:runneradmin /p:$Password /cert:ignore +clipboard /dynamic-resolution /gdi:hw``
 
-              if rdp_address:
-                  print("\n" + "=" * 62)
-                  print("  🎉 TITAN RDP WORKSTATION IS ONLINE & READY!")
-                  print("=" * 62)
-                  print(f"  👉 Host / Address : {rdp_address}")
-                  print("  👉 Username       : runneradmin")
-                  print(f"  👉 Password       : {password}")
-                  print("  👉 Total Duration : 6 Hours (360 Minutes)")
-                  print("=" * 62 + "\n")
+          ### 🖥️ Windows 7 Connection Command:
+          ``mstsc /v:$rdpAddress``
+          "@
+              [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
+          }
 
-                  summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-                  if summary_file:
-                      with open(summary_file, "w", encoding="utf-8") as f:
-                          f.write("# 🗿 Titan Active Windows RDP Session\n\n")
-                          f.write(f"* **Host / Address:** `{rdp_address}`\n")
-                          f.write("* **Username:** `runneradmin`\n")
-                          f.write(f"* **Password:** `{password}`\n")
-                          f.write("* **Session Limit:** 6 Hours (Auto-Renewing)\n\n")
-                          f.write("### 💻 antiX Linux Connection Command:\n")
-                          f.write(f"```bash\nxfreerdp /v:{rdp_address} /u:runneradmin /p:{password} /cert:ignore +clipboard /dynamic-resolution /gdi:hw\n```\n")
+          # 3.6 حلقة المراقبة الحية للحفاظ على تشغيل السيرفر لـ 6 ساعات
+          $TotalMinutes = 350
+          $Elapsed = 0
 
-                  # مراقبة الاتصال وتجديده تلقائياً كل 50 دقيقة قبل انتهاء أي جلسة
-                  cycle_start = time.time()
-                  while active_proc.poll() is None and (time.time() - global_start) / 60 < max_session_minutes:
-                      if (time.time() - cycle_start) / 60 > 50:
-                          print("[!] Auto-refreshing tunnel for 6-hour continuous uptime...")
-                          break
-                      time.sleep(5)
+          while ($Elapsed -lt $TotalMinutes -and -not $proc.HasExited) {
+              Start-Sleep -Seconds 60
+              $Elapsed++
 
-              print("[!] Refreshing tunnel... (All running software and files remain intact)")
-              if active_proc:
-                  try:
-                      active_proc.kill()
-                  except:
-                      pass
-              time.sleep(2)
-
-          print("[*] Session duration completed.")
-          EOF
+              if ($Elapsed % 10 -eq 0) {
+                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Looksmaxxing Workstation Active" -ForegroundColor Gray
+              }
+          }
