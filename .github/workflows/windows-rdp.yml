@@ -1,4 +1,4 @@
-name: Free Looksmaxxing Windows RDP 2026
+name: Persistent Windows RDP 2026 (Serveo & Fallback)
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 1.1 إلغاء قيود التعقيد لقبول كلمة المرور القصيرة 'half'
+          # 1.1 فك تعقيد كلمة المرور لقبول 'half'
           $secCfg = Join-Path $env:TEMP 'secpol.cfg'
           $secSdb = Join-Path $env:TEMP 'secpol.sdb'
           secedit /export /cfg $secCfg /quiet
@@ -47,7 +47,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير (Windows 7 Native Compatibility)
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع Windows 7
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -78,13 +78,12 @@ jobs:
           $PSLDir = Join-Path $DesktopPath 'PSL_Gods_Archive'
           if (!(Test-Path $PSLDir)) { New-Item -Path $PSLDir -ItemType Directory -Force | Out-Null }
 
-          # 2.1 تحميل صور وخلفيات PSL Gods
+          # تحميل صور وخلفيات PSL Gods
           $Images = @{
               'Main_Wallpaper.jpg'   = 'https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg'
               'Chico_Lachowski.jpg'  = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg'
               'Sean_OPry.jpg'        = 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Sean_O%27Pry_2014.jpg/800px-Sean_O%27Pry_2014.jpg'
               'Jordan_Barrett.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Jordan_Barrett_2017.jpg/800px-Jordan_Barrett_2017.jpg'
-              'Aesthetic_Statue.jpg' = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1920&q=80'
           }
 
           $Client = New-Object System.Net.WebClient
@@ -93,7 +92,7 @@ jobs:
               try { $Client.DownloadFile($Images[$img], $Target) } catch {}
           }
 
-          # 2.2 تعيين خلفية الشاشة وتفعيل الوضع الداكن
+          # تعيين خلفية الشاشة والوضع الداكن
           $WallpaperPath = Join-Path $PSLDir 'Main_Wallpaper.jpg'
           if (Test-Path $WallpaperPath) {
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
@@ -104,26 +103,10 @@ jobs:
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
-          # 2.3 كتابة سكريبت التوجيهات على سطح المكتب
-          $Lines = @(
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "         LOOKSMAXXING / PSL GODS WORKSTATION 2026         " -ForegroundColor Yellow',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "[*] Hunter Eyes Activated (Canthal Tilt Positive)" -ForegroundColor Green',
-              'Write-Host "[*] Bone Density & Angular Jawline Optimized" -ForegroundColor Green',
-              'Write-Host "[*] Lean Body Mass Target: 10-12% Bodyfat" -ForegroundColor Green',
-              'Write-Host ""',
-              'Write-Host "PSL Gods Gallery located in: Desktop\PSL_Gods_Archive" -ForegroundColor Magenta',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "Press any key to close..."',
-              '$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")'
-          )
-          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Looksmaxxing_Mantra.ps1'), $Lines, [System.Text.Encoding]::UTF8)
-
       # =========================================================================
-      # 3. إطلاق النفق المجاني 100% بدون بطاقة بنكية أو حساب
+      # 3. إطلاق محرك Serveo المباشر مع التبديل التلقائي واستمرار 6 ساعات
       # =========================================================================
-      - name: Launch Free Direct TCP Tunnel
+      - name: Launch Serveo Unlimited Tunnel Engine
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -132,105 +115,107 @@ jobs:
           import re
           import os
           import sys
-          import urllib.request
-          import zipfile
 
           if hasattr(sys.stdout, 'reconfigure'):
               sys.stdout.reconfigure(encoding='utf-8')
 
           password = "${{ github.event.inputs.rdp_password }}" or "half"
-          rdp_address = None
+          max_session_minutes = 350
+          global_start = time.time()
 
-          print("[*] Launching Free Direct TCP Engine (Pinggy No-Card)...")
-          ssh_cmd = [
-              "ssh",
-              "-T",
-              "-p", "443",
-              "-R", "0:localhost:3389",
-              "-o", "StrictHostKeyChecking=no",
-              "-o", "ServerAliveInterval=10",
-              "-o", "ServerAliveCountMax=120",
-              "-o", "TCPKeepAlive=yes",
-              "tcp@a.pinggy.io"
-          ]
+          def launch_serveo():
+              print("\n[*] Initializing Unlimited Serveo TCP Tunnel...")
+              cmd = [
+                  "ssh",
+                  "-T",
+                  "-R", "0:localhost:3389",
+                  "-o", "StrictHostKeyChecking=no",
+                  "-o", "ServerAliveInterval=15",
+                  "-o", "ServerAliveCountMax=200",
+                  "-o", "TCPKeepAlive=yes",
+                  "serveo.net"
+              ]
+              return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
 
-          proc = subprocess.Popen(
-              ssh_cmd,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT,
-              text=True,
-              bufsize=1,
-              encoding='utf-8',
-              errors='replace'
-          )
+          def launch_pinggy():
+              print("\n[*] Initializing High-Speed Fallback (Pinggy)...")
+              cmd = [
+                  "ssh",
+                  "-T",
+                  "-p", "443",
+                  "-R", "0:localhost:3389",
+                  "-o", "StrictHostKeyChecking=no",
+                  "-o", "ServerAliveInterval=10",
+                  "-o", "ServerAliveCountMax=120",
+                  "-o", "TCPKeepAlive=yes",
+                  "tcp@a.pinggy.io"
+              ]
+              return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
 
-          start_t = time.time()
-          while time.time() - start_t < 20:
-              line = proc.stdout.readline()
-              if not line:
-                  continue
-              clean = line.strip()
-              match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
-              if match:
-                  rdp_address = match.group(1)
-                  break
+          while (time.time() - global_start) / 60 < max_session_minutes:
+              rdp_address = None
+              proc = launch_serveo()
+              t_start = time.time()
 
-          # بديل Bore السريع في حال تأخر النفق الأول
-          if not rdp_address:
-              print("[!] Switching to Bore Failover...")
-              try:
-                  url = "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip"
-                  urllib.request.urlretrieve(url, "bore.zip")
-                  with zipfile.ZipFile("bore.zip", 'r') as zip_ref:
-                      zip_ref.extractall(".")
-                  
-                  bore_proc = subprocess.Popen(
-                      [".\\bore.exe", "local", "3389", "--to", "bore.pub"],
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.STDOUT,
-                      text=True,
-                      bufsize=1
-                  )
-                  
-                  b_start = time.time()
-                  while time.time() - b_start < 15:
-                      b_line = bore_proc.stdout.readline()
-                      if not b_line:
+              while time.time() - t_start < 12:
+                  line = proc.stdout.readline()
+                  if not line:
+                      continue
+                  clean = line.strip()
+                  match = re.search(r"Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
+                  if match:
+                      rdp_address = match.group(1)
+                      break
+
+              # بديل فوري إذا تأخر Serveo
+              if not rdp_address:
+                  try:
+                      proc.kill()
+                  except:
+                      pass
+                  proc = launch_pinggy()
+                  t_start = time.time()
+                  while time.time() - t_start < 15:
+                      line = proc.stdout.readline()
+                      if not line:
                           continue
-                      b_match = re.search(r"listening at bore\.pub:([0-9]+)", b_line)
-                      if b_match:
-                          rdp_address = f"bore.pub:{b_match.group(1)}"
-                          proc = bore_proc
+                      clean = line.strip()
+                      match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
+                      if match:
+                          rdp_address = match.group(1)
                           break
-              except Exception as e:
-                  print(f"[!] Fallback error: {e}")
 
-          if not rdp_address:
-              print("[X] Failed to establish tunnel.")
-              sys.exit(1)
+              if rdp_address:
+                  print("\n" + "=" * 62)
+                  print("  🎉 PERSISTENT WINDOWS WORKSTATION IS ONLINE!")
+                  print("=" * 62)
+                  print(f"  👉 Host / Address : {rdp_address}")
+                  print("  👉 Username       : runneradmin")
+                  print(f"  👉 Password       : {password}")
+                  print("  👉 Tunnel Type    : Unlimited TCP (Serveo / Multi-Edge)")
+                  print("=" * 62 + "\n")
 
-          print("\n" + "=" * 60)
-          print("⚡ LOOKSMAXXING WORKSTATION ONLINE (NO CARD REQUIRED)")
-          print(f"  Host / Address : {rdp_address}")
-          print("  Username       : runneradmin")
-          print(f"  Password       : {password}")
-          print("  Theme          : PSL Gods / Sharp Dark Aesthetic")
-          print("=" * 60 + "\n")
+                  summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+                  if summary_file:
+                      with open(summary_file, "w", encoding="utf-8") as f:
+                          f.write("# 🗿 Persistent Looksmaxxing Windows RDP\n\n")
+                          f.write(f"* **Host / Address:** `{rdp_address}`\n")
+                          f.write("* **Username:** `runneradmin`\n")
+                          f.write(f"* **Password:** `{password}`\n")
+                          f.write("* **Max Uptime:** 6 Hours (360 Minutes)\n")
 
-          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_file:
-              with open(summary_file, "w", encoding="utf-8") as f:
-                  f.write("# 🗿 Free Looksmaxxing Cloud RDP\n\n")
-                  f.write(f"* **Host / Address:** `{rdp_address}`\n")
-                  f.write("* **Username:** `runneradmin`\n")
-                  f.write(f"* **Password:** `{password}`\n")
-                  f.write("* **Status:** Active (Zero Credit Card Required)\n")
+                  tunnel_start = time.time()
+                  while proc.poll() is None and (time.time() - global_start) / 60 < max_session_minutes:
+                      if (time.time() - tunnel_start) / 60 > 55:
+                          break
+                      time.sleep(5)
 
-          max_time = 345
-          elapsed = 0
-          while elapsed < max_time and proc.poll() is None:
-              time.sleep(60)
-              elapsed += 1
-              if elapsed % 10 == 0:
-                  print(f"[*] Session Uptime: {elapsed} / {max_time} minutes active")
+              print("[!] Refreshing tunnel connection... (Your apps and files remain active)")
+              try:
+                  proc.kill()
+              except:
+                  pass
+              time.sleep(2)
+
+          print("[*] Max session duration reached.")
           EOF
