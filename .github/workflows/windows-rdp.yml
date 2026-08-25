@@ -1,4 +1,4 @@
-name: Persistent Windows RDP 2026 (Serveo & Fallback)
+name: Titan Anti-Freeze Windows RDP 2026
 
 on:
   workflow_dispatch:
@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة الحساب السريعة وإلغاء قيود الأمان (كلمة المرور: half)
+      # 1. تهيئة الحساب السريعة، كلمة المرور (half)، وتوافق Windows 7
       # =========================================================================
       - name: Configure System & Windows 7 RDP
         shell: powershell
@@ -26,7 +26,7 @@ jobs:
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 1.1 فك تعقيد كلمة المرور لقبول 'half'
+          # 1.1 فك تعقيد كلمة المرور
           $secCfg = Join-Path $env:TEMP 'secpol.cfg'
           $secSdb = Join-Path $env:TEMP 'secpol.sdb'
           secedit /export /cfg $secCfg /quiet
@@ -39,7 +39,7 @@ jobs:
               Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
           }
 
-          # 1.2 تعيين كلمة المرور والمستخدم runneradmin
+          # 1.2 تعيين كلمة المرور
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
@@ -47,7 +47,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع Windows 7
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -78,7 +78,6 @@ jobs:
           $PSLDir = Join-Path $DesktopPath 'PSL_Gods_Archive'
           if (!(Test-Path $PSLDir)) { New-Item -Path $PSLDir -ItemType Directory -Force | Out-Null }
 
-          # تحميل صور وخلفيات PSL Gods
           $Images = @{
               'Main_Wallpaper.jpg'   = 'https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg'
               'Chico_Lachowski.jpg'  = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg'
@@ -92,7 +91,6 @@ jobs:
               try { $Client.DownloadFile($Images[$img], $Target) } catch {}
           }
 
-          # تعيين خلفية الشاشة والوضع الداكن
           $WallpaperPath = Join-Path $PSLDir 'Main_Wallpaper.jpg'
           if (Test-Path $WallpaperPath) {
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
@@ -104,9 +102,9 @@ jobs:
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
       # =========================================================================
-      # 3. إطلاق محرك Serveo المباشر مع التبديل التلقائي واستمرار 6 ساعات
+      # 3. محرك الأنفاق غير القابل للتعليق (Non-Blocking Anti-Freeze Engine)
       # =========================================================================
-      - name: Launch Serveo Unlimited Tunnel Engine
+      - name: Launch Anti-Freeze Multi-Tunnel Engine
         shell: bash
         run: |
           python -u - << 'EOF'
@@ -115,6 +113,8 @@ jobs:
           import re
           import os
           import sys
+          import threading
+          import queue
 
           if hasattr(sys.stdout, 'reconfigure'):
               sys.stdout.reconfigure(encoding='utf-8')
@@ -123,99 +123,112 @@ jobs:
           max_session_minutes = 350
           global_start = time.time()
 
-          def launch_serveo():
-              print("\n[*] Initializing Unlimited Serveo TCP Tunnel...")
-              cmd = [
-                  "ssh",
-                  "-T",
-                  "-R", "0:localhost:3389",
-                  "-o", "StrictHostKeyChecking=no",
-                  "-o", "ServerAliveInterval=15",
-                  "-o", "ServerAliveCountMax=200",
-                  "-o", "TCPKeepAlive=yes",
-                  "serveo.net"
-              ]
-              return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
+          def enqueue_output(out, q):
+              for line in iter(out.readline, ''):
+                  q.put(line)
+              out.close()
 
-          def launch_pinggy():
-              print("\n[*] Initializing High-Speed Fallback (Pinggy)...")
-              cmd = [
-                  "ssh",
-                  "-T",
-                  "-p", "443",
-                  "-R", "0:localhost:3389",
+          def try_tunnel(cmd, pattern, timeout_sec=8):
+              proc = subprocess.Popen(
+                  cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  bufsize=1,
+                  encoding='utf-8',
+                  errors='replace'
+              )
+              q = queue.Queue()
+              t = threading.Thread(target=enqueue_output, args=(proc.stdout, q))
+              t.daemon = True
+              t.start()
+
+              start = time.time()
+              while time.time() - start < timeout_sec:
+                  if proc.poll() is not None:
+                      break
+                  try:
+                      line = q.get_nowait()
+                  except queue.Empty:
+                      time.sleep(0.2)
+                      continue
+
+                  clean = line.strip()
+                  match = re.search(pattern, clean)
+                  if match:
+                      return proc, match.group(1)
+              
+              try:
+                  proc.kill()
+              except:
+                  pass
+              return None, None
+
+          print("[*] Launching High-Speed Non-Blocking Tunnel Engine...")
+
+          while (time.time() - global_start) / 60 < max_session_minutes:
+              active_proc = None
+              rdp_address = None
+
+              # 1. المحاولة الأولى: Pinggy Direct (سريع جداً وموثوق)
+              print("[*] Connecting via Primary Fast-Stream Tunnel...")
+              pinggy_cmd = [
+                  "ssh", "-T", "-p", "443", "-R", "0:localhost:3389",
                   "-o", "StrictHostKeyChecking=no",
                   "-o", "ServerAliveInterval=10",
                   "-o", "ServerAliveCountMax=120",
                   "-o", "TCPKeepAlive=yes",
                   "tcp@a.pinggy.io"
               ]
-              return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
+              active_proc, rdp_address = try_tunnel(pinggy_cmd, r#"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)"#, timeout_sec=10)
 
-          while (time.time() - global_start) / 60 < max_session_minutes:
-              rdp_address = None
-              proc = launch_serveo()
-              t_start = time.time()
-
-              while time.time() - t_start < 12:
-                  line = proc.stdout.readline()
-                  if not line:
-                      continue
-                  clean = line.strip()
-                  match = re.search(r"Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
-                  if match:
-                      rdp_address = match.group(1)
-                      break
-
-              # بديل فوري إذا تأخر Serveo
+              # 2. المحاولة الثانية: Serveo (إذا تعطل الأول مع حماية من التعليق 6 ثوانٍ)
               if not rdp_address:
-                  try:
-                      proc.kill()
-                  except:
-                      pass
-                  proc = launch_pinggy()
-                  t_start = time.time()
-                  while time.time() - t_start < 15:
-                      line = proc.stdout.readline()
-                      if not line:
-                          continue
-                      clean = line.strip()
-                      match = re.search(r"tcp://([a-zA-Z0-9\.\-]+:[0-9]+)", clean)
-                      if match:
-                          rdp_address = match.group(1)
-                          break
+                  print("[!] Switching to Secondary Tunnel Engine...")
+                  serveo_cmd = [
+                      "ssh", "-T", "-R", "0:localhost:3389",
+                      "-o", "StrictHostKeyChecking=no",
+                      "-o", "ServerAliveInterval=10",
+                      "serveo.net"
+                  ]
+                  active_proc, rdp_address = try_tunnel(serveo_cmd, r#"Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)"#, timeout_sec=6)
 
               if rdp_address:
                   print("\n" + "=" * 62)
-                  print("  🎉 PERSISTENT WINDOWS WORKSTATION IS ONLINE!")
+                  print("  🎉 TITAN RDP WORKSTATION IS ONLINE & READY!")
                   print("=" * 62)
                   print(f"  👉 Host / Address : {rdp_address}")
                   print("  👉 Username       : runneradmin")
                   print(f"  👉 Password       : {password}")
-                  print("  👉 Tunnel Type    : Unlimited TCP (Serveo / Multi-Edge)")
+                  print("  👉 Total Duration : 6 Hours (360 Minutes)")
                   print("=" * 62 + "\n")
 
                   summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
                   if summary_file:
                       with open(summary_file, "w", encoding="utf-8") as f:
-                          f.write("# 🗿 Persistent Looksmaxxing Windows RDP\n\n")
+                          f.write("# 🗿 Titan Active Windows RDP Session\n\n")
                           f.write(f"* **Host / Address:** `{rdp_address}`\n")
                           f.write("* **Username:** `runneradmin`\n")
                           f.write(f"* **Password:** `{password}`\n")
-                          f.write("* **Max Uptime:** 6 Hours (360 Minutes)\n")
+                          f.write("* **Session Limit:** 6 Hours (Auto-Renewing)\n\n")
+                          f.write("### 💻 antiX Linux Connection Command:\n")
+                          f.write(f"```bash\nxfreerdp /v:{rdp_address} /u:runneradmin /p:{password} /cert:ignore +clipboard /dynamic-resolution /gdi:hw\n```\n")
 
-                  tunnel_start = time.time()
-                  while proc.poll() is None and (time.time() - global_start) / 60 < max_session_minutes:
-                      if (time.time() - tunnel_start) / 60 > 55:
+                  # مراقبة الاتصال وتجديده تلقائياً كل 50 دقيقة قبل انتهاء أي جلسة
+                  cycle_start = time.time()
+                  while active_proc.poll() is None and (time.time() - global_start) / 60 < max_session_minutes:
+                      if (time.time() - cycle_start) / 60 > 50:
+                          print("[!] Auto-refreshing tunnel for 6-hour continuous uptime...")
                           break
                       time.sleep(5)
 
-              print("[!] Refreshing tunnel connection... (Your apps and files remain active)")
-              try:
-                  proc.kill()
-              except:
-                  pass
+              print("[!] Refreshing tunnel... (All running software and files remain intact)")
+              if active_proc:
+                  try:
+                      active_proc.kill()
+                  except:
+                      pass
               time.sleep(2)
 
-          print("[*] Max session duration reached.")
+          print("[*] Session duration completed.")
           EOF
