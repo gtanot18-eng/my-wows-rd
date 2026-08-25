@@ -1,4 +1,4 @@
-name: Titan Looksmaxxing PSL Gods Megapack Windows RDP 2026
+name: Developer & Cinema Edition Windows RDP 2026
 
 on:
   workflow_dispatch:
@@ -47,7 +47,7 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق التام مع mstsc و xfreerdp
+          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع mstsc و xfreerdp
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -66,55 +66,37 @@ jobs:
           Restart-Service -Name TermService -Force
 
       # =========================================================================
-      # 2. حزمة Looksmaxxing الشاملة: معرض صور وفيديوهات PSL Gods
+      # 2. تطبيق الثيم الأسود وتحميل حزمة خلفيات الأفلام والمسلسلات العالمية
       # =========================================================================
-      - name: Stage 2 - Deploy Looksmaxxing Theme, Wallpapers, Videos & PSL Archive
+      - name: Stage 2 - Apply Dark Theme & Cinema Wallpapers Depot
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
           $DesktopPath = 'C:\Users\runneradmin\Desktop'
-          $MainDir = Join-Path $DesktopPath 'Looksmaxxing_PSL_Hub'
-          $ImagesDir = Join-Path $MainDir 'PSL_Gods_Images'
-          $VideosDir = Join-Path $MainDir 'Aesthetic_Videos_Edits'
+          $CinemaDir = Join-Path $DesktopPath 'Cinema_Wallpapers'
+          if (!(Test-Path $CinemaDir)) { New-Item -Path $CinemaDir -ItemType Directory -Force | Out-Null }
 
-          if (!(Test-Path $ImagesDir)) { New-Item -Path $ImagesDir -ItemType Directory -Force | Out-Null }
-          if (!(Test-Path $VideosDir)) { New-Item -Path $VideosDir -ItemType Directory -Force | Out-Null }
-
-          # 2.1 تحميل أرشيف صور PSL Gods بدقة عالية
-          $Images = @{
-              '01_David_Gandy_Sharp.jpg'       = 'https://images.wallpapersden.com/image/download/david-gandy-suit_a2lpZ2mUmZqaraWkpJRmbmdlrWZlbWU.jpg'
-              '02_Chico_Lachowski_Prime.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Francisco_Lachowski_2011.jpg/800px-Francisco_Lachowski_2011.jpg'
-              '03_Jordan_Barrett_Hunter.jpg'   = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Jordan_Barrett_2017.jpg/800px-Jordan_Barrett_2017.jpg'
-              '04_Sean_OPry_Jawline.jpg'       = 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Sean_O%27Pry_2014.jpg/800px-Sean_O%27Pry_2014.jpg'
-              '05_Alain_Delon_Vintage.jpg'      = 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Alain_Delon_1962.jpg/800px-Alain_Delon_1962.jpg'
-              '06_Greek_God_Sculpture.jpg'     = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1920&q=80'
-              '07_Aesthetic_Chiseled_Hero.jpg' = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1920&q=80'
+          # 2.1 تحميل باقة خلفيات سينمائية بدقة 4K (Interstellar, Dark Knight, Cyberpunk, Peaky Blinders)
+          $Wallpapers = @{
+              '01_Interstellar_Gargantua.jpg'    = 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80'
+              '02_Dark_Knight_Gotham.jpg'        = 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=80'
+              '03_Blade_Runner_Neon.jpg'         = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1920&q=80'
+              '04_Cinema_Film_Noir.jpg'          = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1920&q=80'
+              '05_Deep_Space_Cosmos.jpg'         = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80'
           }
 
           $Client = New-Object System.Net.WebClient
-          foreach ($img in $Images.Keys) {
-              $Target = Join-Path $ImagesDir $img
-              try { $Client.DownloadFile($Images[$img], $Target) } catch {}
+          foreach ($wp in $Wallpapers.Keys) {
+              $Target = Join-Path $CinemaDir $wp
+              try { $Client.DownloadFile($Wallpapers[$wp], $Target) } catch {}
           }
 
-          # 2.2 تحميل فيديوهات Looksmaxxing و Aesthetic Clips عينة
-          $SampleVideos = @{
-              'Aesthetic_Statue_Loop.mp4'   = 'https://assets.mixkit.co/videos/preview/mixkit-close-up-of-a-classic-sculpture-42525-large.mp4'
-              'Cinematic_Lighting_Face.mp4' = 'https://assets.mixkit.co/videos/preview/mixkit-man-holding-a-neon-light-41549-large.mp4'
-              'Dark_Atmosphere_Motion.mp4'  = 'https://assets.mixkit.co/videos/preview/mixkit-dramatic-portrait-in-a-dark-room-41546-large.mp4'
-          }
-
-          foreach ($vid in $SampleVideos.Keys) {
-              $TargetVid = Join-Path $VideosDir $vid
-              try { $Client.DownloadFile($SampleVideos[$vid], $TargetVid) } catch {}
-          }
-
-          # 2.3 تعيين خلفية الشاشة الأساسية وتفعيل المظهر الليلي
-          $WallpaperPath = Join-Path $ImagesDir '01_David_Gandy_Sharp.jpg'
-          if (Test-Path $WallpaperPath) {
-              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $WallpaperPath -Force
+          # 2.2 تعيين خلفية الشاشة وتفعيل الوضع الليلي الكامل (Dark Theme)
+          $DefaultWallpaper = Join-Path $CinemaDir '01_Interstellar_Gargantua.jpg'
+          if (Test-Path $DefaultWallpaper) {
+              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $DefaultWallpaper -Force
               Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '10' -Force
               rundll32.exe user32.dll, UpdatePerUserSystemParameters
           }
@@ -122,44 +104,49 @@ jobs:
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
-          # 2.4 سكريبت تحميل مقاطع وفيديوهات تيك توك ويوتيوب بجودة 4K على سطح المكتب
-          $DownloaderScript = @(
+          # 2.3 سكريبت تحميل أي فيلم، حلقة، أو مقطع يوتيوب بجودة 4K على سطح المكتب
+          $DownloaderLines = @(
               'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "     LOOKSMAXXING / PSL GODS 4K VIDEO DOWNLOADER         " -ForegroundColor Yellow',
+              'Write-Host "         CINEMA & MEDIA 4K VIDEO DOWNLOADER               " -ForegroundColor Yellow',
               'Write-Host "==========================================================" -ForegroundColor Cyan',
-              '$url = Read-Host "Paste YouTube / TikTok / Reels Video URL"',
+              '$url = Read-Host "Paste Video URL (YouTube, Vimeo, Media Source)"',
               'if ($url) {',
-              '    $outDir = "C:\Users\runneradmin\Desktop\Looksmaxxing_PSL_Hub\Aesthetic_Videos_Edits\%(title)s.%(ext)s"',
-              '    Write-Host "[*] Downloading in Ultra High Quality..." -ForegroundColor Magenta',
+              '    $outDir = "C:\Users\runneradmin\Desktop\Cinema_Wallpapers\%(title)s.%(ext)s"',
+              '    Write-Host "[*] Downloading in Highest Quality via yt-dlp..." -ForegroundColor Magenta',
               '    winget install --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements',
               '    yt-dlp -f "bestvideo+bestaudio/best" --no-playlist -o $outDir $url',
-              '    Write-Host "[✓] Video saved to Aesthetic_Videos_Edits folder!" -ForegroundColor Green',
+              '    Write-Host "[✓] Media saved successfully!" -ForegroundColor Green',
               '}',
               'Start-Sleep -Seconds 3'
           )
-          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_PSL_Videos.ps1'), $DownloaderScript, [System.Text.Encoding]::UTF8)
-
-          # 2.5 سكريبت دليل المظهر ومعايير PSL على سطح المكتب
-          $MantraScript = @(
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "              PSL GODS AESTHETIC DIRECTORY                " -ForegroundColor Yellow',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "[★] Chico Lachowski   : Compact Midface & Positive Canthal Tilt" -ForegroundColor Green',
-              'Write-Host "[★] Jordan Barrett    : High Zygos & Hollow Cheeks" -ForegroundColor Green',
-              'Write-Host "[★] David Gandy       : Forward Facial Growth & Dimorphism" -ForegroundColor Green',
-              'Write-Host "[★] Sean O''Pry        : Hunter Eyes & Angular Gonial Angle" -ForegroundColor Green',
-              'Write-Host ""',
-              'Write-Host "Gallery Location: Desktop\Looksmaxxing_PSL_Hub" -ForegroundColor Magenta',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "Press any key to close..."',
-              '$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")'
-          )
-          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'PSL_Standards_Info.ps1'), $MantraScript, [System.Text.Encoding]::UTF8)
+          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_Media_4K.ps1'), $DownloaderLines, [System.Text.Encoding]::UTF8)
 
       # =========================================================================
-      # 3. تشغيل نفق Bore TCP النقي (إقلاع فوري بدون أخطاء وبدون SSH)
+      # 3. تثبيت Android Studio وLively Wallpaper والأدوات في الخلفية (بدون تأخير الإقلاع)
       # =========================================================================
-      - name: Stage 3 - Launch Pure Bore TCP Engine & Live Session Watchdog
+      - name: Stage 3 - Background Deployment for Android Studio & Lively Wallpaper
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'SilentlyContinue'
+          $ScriptPath = Join-Path $env:TEMP 'Install_Apps.ps1'
+
+          # سكريبت تثبيت تلقائي يشتغل في الخلفية فور تشغيل النظام
+          $InstallScript = @'
+          Start-Sleep -Seconds 5
+          winget install --id Google.AndroidStudio --silent --accept-source-agreements --accept-package-agreements
+          winget install --id rocksdanister.LivelyWallpaper --silent --accept-source-agreements --accept-package-agreements
+          winget install --id VideoLAN.VLC --silent --accept-source-agreements --accept-package-agreements
+          winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
+          '@
+          [System.IO.File]::WriteAllText($ScriptPath, $InstallScript, [System.Text.Encoding]::UTF8)
+
+          # إطلاق التثبيت في عملية منفصلة بالخلفية لفتح الـ RDP فوراً
+          Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File $ScriptPath" -WindowStyle Hidden
+
+      # =========================================================================
+      # 4. تشغيل نفق Bore TCP النقي والمراقبة الحية (فتح خلال 8 ثوانٍ)
+      # =========================================================================
+      - name: Stage 4 - Launch Pure Bore TCP Engine & Live Session Watchdog
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
@@ -168,8 +155,8 @@ jobs:
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
-          # 3.1 تحميل برنامج Bore الثنائي المستقل
-          Write-Host '[*] Fetching Pure Rust TCP Bore Engine...' -ForegroundColor Cyan
+          # 4.1 تحميل محرك Bore المستقل
+          Write-Host '[*] Initializing Pure Bore TCP Multiplexer...' -ForegroundColor Cyan
           $zipPath = Join-Path $env:TEMP 'bore.zip'
           $boreDir = Join-Path $env:TEMP 'bore'
           $url = 'https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip'
@@ -179,10 +166,10 @@ jobs:
           $boreExe = Join-Path $boreDir 'bore.exe'
           $logPath = Join-Path $env:TEMP 'bore.log'
 
-          # 3.2 إطلاق النفق وتوجيه المنفذ 3389
+          # 4.2 إطلاق النفق وتوجيه المنفذ 3389
           $proc = Start-Process -FilePath $boreExe -ArgumentList 'local 3389 --to bore.pub' -RedirectStandardOutput $logPath -RedirectStandardError (Join-Path $env:TEMP 'bore_err.log') -PassThru
 
-          # 3.3 استخراج المنفذ المخصص فورياً
+          # 4.3 استخراج المنفذ المخصص فورياً
           $rdpAddress = $null
           $attempts = 0
           while ($attempts -lt 25 -and -not $rdpAddress) {
@@ -202,23 +189,23 @@ jobs:
               exit 1
           }
 
-          # 3.4 طباعة بطاقة الاتصال الرسمية
+          # 4.4 طباعة لوحة التحكم
           Write-Host ''
           Write-Host '================================================================' -ForegroundColor Green
-          Write-Host '  🗿 LOOKSMAXXING & PSL GODS WINDOWS WORKSTATION IS ONLINE      ' -ForegroundColor Green
+          Write-Host '  🎉 DEVELOPER & CINEMA WORKSTATION ONLINE (FAST BOOT ACTIVE)   ' -ForegroundColor Green
           Write-Host '================================================================' -ForegroundColor Green
           Write-Host "  RDP Address      : $rdpAddress" -ForegroundColor Yellow
           Write-Host '  Username         : runneradmin' -ForegroundColor Cyan
           Write-Host "  Password         : $Password" -ForegroundColor Cyan
-          Write-Host '  Theme            : PSL Gods Megapack (Images & Video Edits)' -ForegroundColor Magenta
-          Write-Host '  Native Support   : Windows 7 (mstsc) & antiX Linux (xfreerdp)' -ForegroundColor Green
+          Write-Host '  Theme            : Deep Dark Mode + 4K Cinema Wallpapers' -ForegroundColor Magenta
+          Write-Host '  Preloaded Apps   : Android Studio, Lively Wallpaper, VLC, 7-Zip' -ForegroundColor Green
           Write-Host '================================================================' -ForegroundColor Green
           Write-Host ''
 
-          # 3.5 حفظ بطاقة الملخص في تبويب GitHub Summary
+          # 4.5 كتابة ملخص الجلسة في GitHub Summary
           if ($env:GITHUB_STEP_SUMMARY) {
               $SummaryMarkdown = @"
-          # 🗿 Looksmaxxing PSL Gods Enterprise RDP
+          # 🎬 Developer & Cinema Edition Windows RDP
 
           ### 🚀 Connection Credentials
           | Parameter | Value |
@@ -226,18 +213,19 @@ jobs:
           | **Host / Address** | ``$rdpAddress`` |
           | **Username** | ``runneradmin`` |
           | **Password** | ``$Password`` |
-          | **Hub Location** | ``Desktop\Looksmaxxing_PSL_Hub`` |
+          | **Installed Suite** | Android Studio, Lively Wallpaper, VLC Player |
+          | **Wallpapers Hub** | ``Desktop\Cinema_Wallpapers`` |
 
           ### 💻 antiX Linux Connection Command:
           ``xfreerdp /v:$rdpAddress /u:runneradmin /p:$Password /cert:ignore +clipboard /dynamic-resolution /gdi:hw``
 
-          ### 🖥️ Windows 7 Connection Command:
+          ### 🖥️ Windows Connection Command:
           ``mstsc /v:$rdpAddress``
           "@
               [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
           }
 
-          # 3.6 حلقة المراقبة الحية للحفاظ على تشغيل السيرفر لـ 6 ساعات
+          # 4.6 حلقة المراقبة الحية للحفاظ على الجلسة حتى 6 ساعات
           $TotalMinutes = 350
           $Elapsed = 0
 
@@ -246,6 +234,6 @@ jobs:
               $Elapsed++
 
               if ($Elapsed % 10 -eq 0) {
-                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Looksmaxxing Workstation Active" -ForegroundColor Gray
+                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Workstation Active" -ForegroundColor Gray
               }
           }
