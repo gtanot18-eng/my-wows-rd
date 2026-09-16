@@ -1,4 +1,4 @@
-name: AnyDesk Cloud Workstation 2026
+name: AnyDesk Portable Workstation 2026
 
 on:
   workflow_dispatch:
@@ -17,113 +17,53 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # =========================================================================
-      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي
-      # =========================================================================
-      - name: Stage 1 - System & Arabic Keyboard Setup
+      - name: Setup System & Arabic
         shell: powershell
         run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-
-          # إضافة اللغة العربية للكيبورد (Alt + Shift)
           $LangList = Get-WinUserLanguageList
           if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
               $LangList.Add('ar-SA')
               Set-WinUserLanguageList -LanguageTag $LangList -Force
           }
-
-          # تفعيل الوضع الليلي
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
-      # =========================================================================
-      # 2. تثبيت AnyDesk واستخراج الـ ID المباشر من system.conf
-      # =========================================================================
-      - name: Stage 2 - Install & Configure AnyDesk Service
+      - name: Run AnyDesk Portable
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           
-          # 2.1 تحميل وتثبيت AnyDesk
-          Write-Host "[*] Downloading AnyDesk Executable..." -ForegroundColor Cyan
-          $setupFile = Join-Path $env:TEMP "AnyDesk.exe"
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $setupFile -UseBasicParsing
+          # تحميل AnyDesk المحمول
+          $anydeskExe = Join-Path $env:TEMP "AnyDesk.exe"
+          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $anydeskExe -UseBasicParsing
 
-          Write-Host "[*] Installing AnyDesk Silent Service..." -ForegroundColor Cyan
-          Start-Process -FilePath $setupFile -ArgumentList "--install `"C:\Program Files (x86)\AnyDesk`" --start-with-win --silent" -Wait
-
-          $AnyDeskPath = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
-
-          # 2.2 إعادة تشغيل الخدمة لتوليد ملف النظام
-          Write-Host "[*] Restarting AnyDesk Service to generate ID..." -ForegroundColor Cyan
-          net stop anydesk 2>&1 | Out-Null
-          net start anydesk 2>&1 | Out-Null
-          Start-Sleep -Seconds 5
-
-          # 2.3 تعيين كلمة المرور
+          # تعيين كلمة المرور وتشغيل العملية في الخلفية
           $Password = '${{ github.event.inputs.anydesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
-          cmd.exe /c "echo $Password | `"$AnyDeskPath`" --set-password"
+          
+          cmd.exe /c "echo $Password | `"$anydeskExe`" --set-password"
+          Start-Process -FilePath $anydeskExe -ArgumentList "--start-with-win"
 
-          # 2.4 استخراج AnyDesk ID مباشرة من ملف system.conf
+          Start-Sleep -Seconds 10
+
+          # محاولة استخراج ID بجميع الطرق الممكنة
           $AnyDeskID = ""
-          $confPath = "C:\ProgramData\AnyDesk\system.conf"
           $retry = 0
-
-          while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 20) {
+          while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 15) {
               Start-Sleep -Seconds 2
               $retry++
-
-              if (Test-Path $confPath) {
-                  $content = Get-Content $confPath -ErrorAction SilentlyContinue
-                  if ($content -match 'ad\.anynet\.id\s*=\s*([0-9\s]+)') {
-                      $AnyDeskID = ($matches[1] -replace '\s','').Trim()
-                  }
-              }
-
-              if ([string]::IsNullOrWhiteSpace($AnyDeskID)) {
-                  $cmdId = & "$AnyDeskPath" --get-id
-                  if ($cmdId -match '\d+') {
-                      $AnyDeskID = ($cmdId -replace '\D','').Trim()
-                  }
+              $idOutput = cmd.exe /c "`"$anydeskExe`" --get-id"
+              if ($idOutput -match '\d{9,10}') {
+                  $AnyDeskID = $matches[0]
               }
           }
 
-          # 2.5 طباعة البيانات
-          Write-Host ""
-          Write-Host "================================================================" -ForegroundColor Green
-          Write-Host "   🎉 ANYDESK CLOUD WORKSTATION IS ONLINE                       " -ForegroundColor Green
-          Write-Host "================================================================" -ForegroundColor Green
-          Write-Host "  AnyDesk ID  : $AnyDeskID" -ForegroundColor Yellow
-          Write-Host "  Password    : $Password" -ForegroundColor Cyan
-          Write-Host "  Keyboard    : English + Arabic (ar-SA) [Alt + Shift]" -ForegroundColor Green
-          Write-Host "================================================================" -ForegroundColor Green
-          Write-Host ""
+          Write-Host "==========================================" -ForegroundColor Green
+          Write-Host " ANYDESK ID : $AnyDeskID" -ForegroundColor Yellow
+          Write-Host " PASSWORD  : $Password" -ForegroundColor Cyan
+          Write-Host "==========================================" -ForegroundColor Green
 
-          # 2.6 إضافة الملخص في صفحة GitHub Actions
-          if ($env:GITHUB_STEP_SUMMARY) {
-              $SummaryMarkdown = @"
-          # 🖥️ AnyDesk Cloud Workstation
-
-          ### 🔑 Connection Credentials
-          | Parameter | Value |
-          | :--- | :--- |
-          | **AnyDesk ID** | ``$AnyDeskID`` |
-          | **Password** | ``$Password`` |
-          | **Audio & Video** | Native High-Quality Streaming |
-
-          ### 🚀 How to Connect:
-          1. Open **AnyDesk** on your PC, Linux/antiX, or Phone.
-          2. Enter the ID: ``$AnyDeskID``
-          3. Enter Password: ``$Password``
-          "@
-              [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
-          }
-
-      # =========================================================================
-      # 3. الحفاظ على تشغيل الجلسة
-      # =========================================================================
-      - name: Stage 3 - Keep Session Alive
+      - name: Keep Alive
         shell: powershell
         run: |
           $TotalMinutes = 350
@@ -131,7 +71,4 @@ jobs:
           while ($Elapsed -lt $TotalMinutes) {
               Start-Sleep -Seconds 60
               $Elapsed++
-              if ($Elapsed % 10 -eq 0) {
-                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | AnyDesk Active" -ForegroundColor Gray
-              }
           }
