@@ -17,3 +17,19 @@ jobs:
         run: |
           Set-ExecutionPolicy Unrestricted -Scope Process -Force
           .\setup.ps1
+
+      - name: Setup Password & Start Bore Tunnel
+        shell: powershell
+        run: |
+          # 1. تعيين كلمة مرور لحساب المستخدم
+          $Password = ConvertTo-SecureString "P@ssword1234!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+
+          # 2. تنزيل وتثبيت أداة bore
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip" -UseBasicParsing
+          Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
+
+          # 3. فتح نفق الاتصال وإبقاء السيرفر يعمل
+          Write-Host "Starting Bore Tunnel..." -ForegroundColor Green
+          .\bore.exe local 3389 --to bore.pub
