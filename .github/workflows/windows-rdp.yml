@@ -1,4 +1,4 @@
-name: AnyDesk Portable Workstation 2026
+name: AnyDesk Unattended Workstation 2026
 
 on:
   workflow_dispatch:
@@ -18,14 +18,13 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي (محتوى آمن ضد الكراش)
+      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي
       # =========================================================================
       - name: Setup System & Arabic
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
 
-          # 1.1 إضافة اللغة العربية بأمان
           try {
               $LangList = Get-WinUserLanguageList
               if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
@@ -34,49 +33,63 @@ jobs:
               }
           } catch {}
 
-          # 1.2 إنشاء مسار الريجستري وتفعيل الوضع الليلي بأمان
           $ThemePath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-          if (-not (Test-Path $ThemePath)) {
-              New-Item -Path $ThemePath -Force | Out-Null
-          }
+          if (-not (Test-Path $ThemePath)) { New-Item -Path $ThemePath -Force | Out-Null }
           Set-ItemProperty -Path $ThemePath -Name 'AppsUseLightTheme' -Value 0 -Type DWord -Force
           Set-ItemProperty -Path $ThemePath -Name 'SystemUsesLightTheme' -Value 0 -Type DWord -Force
 
       # =========================================================================
-      # 2. تشغيل AnyDesk وتوليد الـ ID
+      # 2. تثبيت AnyDesk كـ Service وتفعيل Unattended Access القسري
       # =========================================================================
-      - name: Run AnyDesk Portable
+      - name: Install & Configure AnyDesk Unattended
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
 
-          # 2.1 تحميل AnyDesk
-          Write-Host "[*] Downloading AnyDesk Executable..." -ForegroundColor Cyan
-          $anydeskExe = Join-Path $env:TEMP "AnyDesk.exe"
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $anydeskExe -UseBasicParsing
+          # 2.1 تحميل وتثبيت AnyDesk كخدمة نظام
+          Write-Host "[*] Downloading AnyDesk..." -ForegroundColor Cyan
+          $setupFile = Join-Path $env:TEMP "AnyDesk.exe"
+          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $setupFile -UseBasicParsing
 
-          # 2.2 تعيين كلمة المرور وتشغيل العملية
+          Write-Host "[*] Installing AnyDesk Service..." -ForegroundColor Cyan
+          Start-Process -FilePath $setupFile -ArgumentList "--install `"C:\Program Files (x86)\AnyDesk`" --start-with-win --silent" -Wait
+          Start-Sleep -Seconds 5
+
+          $AnyDeskPath = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+
+          # 2.2 إيقاف الخدمة لتعديل الإعدادات
+          net stop anydesk 2>&1 | Out-Null
+
+          # 2.3 تعديل ملف system.conf بالسماح التلقائي بالاتصال (interactive_access = 2)
+          $confPath = "C:\ProgramData\AnyDesk\system.conf"
+          if (Test-Path $confPath) {
+              Add-Content -Path $confPath -Value "`nad.security.interactive_access=2`n"
+          }
+
+          # 2.4 إعادة تشغيل الخدمة
+          net start anydesk 2>&1 | Out-Null
+          Start-Sleep -Seconds 5
+
+          # 2.5 تعيين كلمة المرور المباشرة
           $Password = '${{ github.event.inputs.anydesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
+          cmd.exe /c "echo $Password | `"$AnyDeskPath`" --set-password"
 
-          cmd.exe /c "echo $Password | `"$anydeskExe`" --set-password"
-          Start-Process -FilePath $anydeskExe -ArgumentList "--start-with-win"
-
-          Start-Sleep -Seconds 10
-
-          # 2.3 محاولة استخراج ID
+          # 2.6 قراءة ה-ID من الملف
           $AnyDeskID = ""
           $retry = 0
           while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 15) {
               Start-Sleep -Seconds 2
               $retry++
-              $idOutput = cmd.exe /c "`"$anydeskExe`" --get-id"
-              if ($idOutput -match '\d{9,10}') {
-                  $AnyDeskID = $matches[0]
+              if (Test-Path $confPath) {
+                  $content = Get-Content $confPath
+                  if ($content -match 'ad\.anynet\.id\s*=\s*([0-9\s]+)') {
+                      $AnyDeskID = ($matches[1] -replace '\s','').Trim()
+                  }
               }
           }
 
-          # 2.4 طباعة البيانات والملخص
+          # 2.7 طباعة البيانات
           Write-Host ""
           Write-Host "==========================================" -ForegroundColor Green
           Write-Host " ANYDESK ID : $AnyDeskID" -ForegroundColor Yellow
@@ -86,9 +99,8 @@ jobs:
 
           if ($env:GITHUB_STEP_SUMMARY) {
               $SummaryMarkdown = @"
-          # 🖥️ AnyDesk Workstation Online
+          # 🖥️ AnyDesk Ready
 
-          ### 🔑 Connection Credentials
           * **AnyDesk ID:** ``$AnyDeskID``
           * **Password:** ``$Password``
           "@
