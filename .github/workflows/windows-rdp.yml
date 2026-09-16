@@ -1,15 +1,15 @@
-name: Developer & Cinema Edition Windows RDP 2026
+name: AnyDesk Cloud Workstation 2026
 
 on:
   workflow_dispatch:
     inputs:
-      rdp_password:
-        description: 'RDP Password'
+      anydesk_password:
+        description: 'Set AnyDesk Password'
         required: true
-        default: 'half'
+        default: 'P@ssword1234!'
 
 jobs:
-  rdp-deployment:
+  anydesk-deployment:
     runs-on: windows-latest
     timeout-minutes: 360
 
@@ -18,229 +18,95 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة النظام، المستخدم runneradmin وإضافة اللغة العربية وتوافق RDP
+      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي
       # =========================================================================
-      - name: Stage 1 - Account, Arabic Keyboard & RDP Setup
+      - name: Stage 1 - System & Arabic Keyboard Setup
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-          # 1.1 فك تعقيد كلمة المرور
-          $secCfg = Join-Path $env:TEMP 'secpol.cfg'
-          $secSdb = Join-Path $env:TEMP 'secpol.sdb'
-          secedit /export /cfg $secCfg /quiet
-          if (Test-Path $secCfg) {
-              $content = Get-Content $secCfg
-              $content = $content -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0'
-              $content = $content -replace 'MinimumPasswordLength = \d+', 'MinimumPasswordLength = 0'
-              Set-Content -Path $secCfg -Value $content
-              secedit /configure /db $secSdb /cfg $secCfg /areas SECURITYPOLICY /quiet
-              Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
-          }
-
-          # 1.2 تعيين كلمة المرور والمجموعات
-          $Password = '${{ github.event.inputs.rdp_password }}'
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
-
-          net user runneradmin $Password /expires:never /active:yes
-          net localgroup Administrators runneradmin /add
-          net localgroup 'Remote Desktop Users' runneradmin /add
-
-          # 1.3 إضافة اللغة العربية لردة الكيبورد (Alt + Shift)
+          # إضافة اللغة العربية للكيبورد (Alt + Shift)
           $LangList = Get-WinUserLanguageList
           if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
               $LangList.Add('ar-SA')
               Set-WinUserLanguageList -LanguageTag $LangList -Force
           }
 
-          # 1.4 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع mstsc و xfreerdp
-          $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
-          $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
-          Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name 'UserAuthentication' -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
-          Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
-
-          # 1.5 تفعيل 60 FPS وإلغاء اختناق الماوس والشبكة
-          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
-          Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TCPNoDelay' -Value 1 -Type DWord -Force
-          Set-MpPreference -DisableRealtimeMonitoring $true
-
-          Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
-          Restart-Service -Name TermService -Force
-
-      # =========================================================================
-      # 2. تطبيق الثيم الأسود وتحميل حزمة خلفيات الأفلام والمسلسلات العالمية
-      # =========================================================================
-      - name: Stage 2 - Apply Dark Theme & Cinema Wallpapers Depot
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-          $DesktopPath = 'C:\Users\runneradmin\Desktop'
-          $CinemaDir = Join-Path $DesktopPath 'Cinema_Wallpapers'
-          if (!(Test-Path $CinemaDir)) { New-Item -Path $CinemaDir -ItemType Directory -Force | Out-Null }
-
-          # 2.1 تحميل باقة خلفيات سينمائية بدقة 4K
-          $Wallpapers = @{
-              '01_Interstellar_Gargantua.jpg'    = 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80'
-              '02_Dark_Knight_Gotham.jpg'        = 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=80'
-              '03_Blade_Runner_Neon.jpg'         = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1920&q=80'
-              '04_Cinema_Film_Noir.jpg'          = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1920&q=80'
-              '05_Deep_Space_Cosmos.jpg'         = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80'
-          }
-
-          $Client = New-Object System.Net.WebClient
-          foreach ($wp in $Wallpapers.Keys) {
-              $Target = Join-Path $CinemaDir $wp
-              try { $Client.DownloadFile($Wallpapers[$wp], $Target) } catch {}
-          }
-
-          # 2.2 تعيين خلفية الشاشة وتفعيل الوضع الليلي الكامل (Dark Theme)
-          $DefaultWallpaper = Join-Path $CinemaDir '01_Interstellar_Gargantua.jpg'
-          if (Test-Path $DefaultWallpaper) {
-              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $DefaultWallpaper -Force
-              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '10' -Force
-              rundll32.exe user32.dll, UpdatePerUserSystemParameters
-          }
-
+          # تفعيل الوضع الليلي
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
-          # 2.3 سكريبت تحميل أي فيلم، حلقة، أو مقطع يوتيوب بجودة 4K على سطح المكتب
-          $DownloaderLines = @(
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "         CINEMA & MEDIA 4K VIDEO DOWNLOADER               " -ForegroundColor Yellow',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              '$url = Read-Host "Paste Video URL (YouTube, Vimeo, Media Source)"',
-              'if ($url) {',
-              '    $outDir = "C:\Users\runneradmin\Desktop\Cinema_Wallpapers\%(title)s.%(ext)s"',
-              '    Write-Host "[*] Downloading in Highest Quality via yt-dlp..." -ForegroundColor Magenta',
-              '    winget install --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements',
-              '    yt-dlp -f "bestvideo+bestaudio/best" --no-playlist -o $outDir $url',
-              '    Write-Host "[✓] Media saved successfully!" -ForegroundColor Green',
-              '}',
-              'Start-Sleep -Seconds 3'
-          )
-          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_Media_4K.ps1'), $DownloaderLines, [System.Text.Encoding]::UTF8)
-
       # =========================================================================
-      # 3. تثبيت Android Studio والأدوات في الخلفية (بدون Lively Wallpaper)
+      # 2. تثبيت AnyDesk وتعيين كلمة المرور واستخراج الـ ID
       # =========================================================================
-      - name: Stage 3 - Background Deployment for Android Studio & Tools
+      - name: Stage 2 - Install & Configure AnyDesk Service
         shell: powershell
         run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          $ScriptPath = Join-Path $env:TEMP 'Install_Apps.ps1'
+          Write-Host "[*] Installing AnyDesk via Winget..." -ForegroundColor Cyan
+          winget install --id AnyDeskSoftwareGmbH.AnyDesk --silent --accept-source-agreements --accept-package-agreements
 
-          # سكريبت تثبيت تلقائي بدون Lively Wallpaper
-          $InstallScript = @'
           Start-Sleep -Seconds 5
-          winget install --id Google.AndroidStudio --silent --accept-source-agreements --accept-package-agreements
-          winget install --id VideoLAN.VLC --silent --accept-source-agreements --accept-package-agreements
-          winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
-          '@
-          [System.IO.File]::WriteAllText($ScriptPath, $InstallScript, [System.Text.Encoding]::UTF8)
+          $AnyDeskPath = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
 
-          Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File $ScriptPath" -WindowStyle Hidden
-
-      # =========================================================================
-      # 4. تشغيل نفق Bore TCP والمراقبة الحية
-      # =========================================================================
-      - name: Stage 4 - Launch Pure Bore TCP Engine & Live Session Watchdog
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-          $Password = '${{ github.event.inputs.rdp_password }}'
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
-
-          # 4.1 تحميل محرك Bore
-          Write-Host '[*] Initializing Pure Bore TCP Multiplexer...' -ForegroundColor Cyan
-          $zipPath = Join-Path $env:TEMP 'bore.zip'
-          $boreDir = Join-Path $env:TEMP 'bore'
-          $url = 'https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip'
-          (New-Object System.Net.WebClient).DownloadFile($url, $zipPath)
-          Expand-Archive -Path $zipPath -DestinationPath $boreDir -Force
-
-          $boreExe = Join-Path $boreDir 'bore.exe'
-          $logPath = Join-Path $env:TEMP 'bore.log'
-
-          # 4.2 إطلاق النفق وتوجيه المنفذ 3389
-          $proc = Start-Process -FilePath $boreExe -ArgumentList 'local 3389 --to bore.pub' -RedirectStandardOutput $logPath -RedirectStandardError (Join-Path $env:TEMP 'bore_err.log') -PassThru
-
-          # 4.3 استخراج المنفذ المخصص فورياً
-          $rdpAddress = $null
-          $attempts = 0
-          while ($attempts -lt 25 -and -not $rdpAddress) {
-              Start-Sleep -Seconds 1
-              $attempts++
-              if (Test-Path $logPath) {
-                  $content = Get-Content $logPath -Raw
-                  if ($content -match 'listening at bore\.pub:([0-9]+)') {
-                      $rdpAddress = 'bore.pub:' + $matches[1]
-                  }
-              }
+          if (-not (Test-Path $AnyDeskPath)) {
+              Write-Host "[!] Winget install fallback: Downloading direct installer..." -ForegroundColor Yellow
+              $setupFile = Join-Path $env:TEMP "AnyDesk.exe"
+              Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $setupFile -UseBasicParsing
+              Start-Process $setupFile -ArgumentList "--install `"C:\Program Files (x86)\AnyDesk`" --start-with-win --silent" -Wait
           }
 
-          if (-not $rdpAddress) {
-              Write-Host '[!] Bore tunnel negotiation failed. Logs:' -ForegroundColor Red
-              if (Test-Path $logPath) { Get-Content $logPath }
-              exit 1
-          }
+          # تعيين كلمة المرور للوصول المباشر (Unattended Access)
+          $Password = '${{ github.event.inputs.anydesk_password }}'
+          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
 
-          # 4.4 طباعة لوحة التحكم
-          Write-Host ''
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host '   🎉 DEVELOPER & CINEMA WORKSTATION ONLINE (FAST BOOT ACTIVE)   ' -ForegroundColor Green
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host "  RDP Address      : $rdpAddress" -ForegroundColor Yellow
-          Write-Host '  Username         : runneradmin' -ForegroundColor Cyan
-          Write-Host "  Password         : $Password" -ForegroundColor Cyan
-          Write-Host '  Keyboard Layout  : English (US) + Arabic (ar-SA) [Alt+Shift]' -ForegroundColor Green
-          Write-Host '  Theme            : Deep Dark Mode + 4K Cinema Wallpapers' -ForegroundColor Magenta
-          Write-Host '  Preloaded Apps   : Android Studio, VLC Player, 7-Zip' -ForegroundColor Green
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host ''
+          echo $Password | & $AnyDeskPath --set-password
 
-          # 4.5 كتابة ملخص الجلسة في GitHub Summary
+          # الحصول على ID الجهاز
+          $AnyDeskID = & $AnyDeskPath --get-id
+          $AnyDeskID = $AnyDeskID.Trim()
+
+          Write-Host ""
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "   🎉 ANYDESK CLOUD WORKSTATION IS ONLINE                       " -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host "  AnyDesk ID  : $AnyDeskID" -ForegroundColor Yellow
+          Write-Host "  Password    : $Password" -ForegroundColor Cyan
+          Write-Host "  Keyboard    : English + Arabic (ar-SA) [Alt + Shift]" -ForegroundColor Green
+          Write-Host "================================================================" -ForegroundColor Green
+          Write-Host ""
+
+          # إضافة الملخص في صفحة GitHub Actions
           if ($env:GITHUB_STEP_SUMMARY) {
               $SummaryMarkdown = @"
-          # 🎬 Developer & Cinema Edition Windows RDP
+          # 🖥️ AnyDesk Cloud Workstation
 
-          ### 🚀 Connection Credentials
+          ### 🔑 Credentials
           | Parameter | Value |
           | :--- | :--- |
-          | **Host / Address** | ``$rdpAddress`` |
-          | **Username** | ``runneradmin`` |
+          | **AnyDesk ID** | ``$AnyDeskID`` |
           | **Password** | ``$Password`` |
-          | **Keyboard Layout** | English + Arabic (`ar-SA`) [Switch: `Alt + Shift`] |
-          | **Installed Suite** | Android Studio, VLC Player, 7-Zip |
-          | **Wallpapers Hub** | ``Desktop\Cinema_Wallpapers`` |
+          | **Audio & Video** | Native High-Quality Streaming Enabled |
 
-          ### 💻 antiX Linux Connection Command:
-          ``xfreerdp /v:$rdpAddress /u:runneradmin /p:$Password /cert:ignore +clipboard /dynamic-resolution /gdi:hw``
-
-          ### 🖥️ Windows Connection Command:
-          ``mstsc /v:$rdpAddress``
+          ### 🚀 How to Connect:
+          1. Open **AnyDesk** on your PC, Linux/antiX, or Phone.
+          2. Enter the ID: ``$AnyDeskID``
+          3. Enter Password: ``$Password``
           "@
               [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
           }
 
-          # 4.6 حلقة المراقبة الحية للحفاظ على الجلسة
+      # =========================================================================
+      # 3. الحفاظ على تشغيل الجلسة
+      # =========================================================================
+      - name: Stage 3 - Keep Session Alive
+        shell: powershell
+        run: |
           $TotalMinutes = 350
           $Elapsed = 0
-
-          while ($Elapsed -lt $TotalMinutes -and -not $proc.HasExited) {
+          while ($Elapsed -lt $TotalMinutes) {
               Start-Sleep -Seconds 60
               $Elapsed++
-
               if ($Elapsed % 10 -eq 0) {
-                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Workstation Active" -ForegroundColor Gray
+                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | AnyDesk Active" -ForegroundColor Gray
               }
           }
