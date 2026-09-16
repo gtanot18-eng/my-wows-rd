@@ -18,9 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة النظام، المستخدم runneradmin وتوافق Windows 7 (كلمة المرور: half)
+      # 1. تهيئة النظام، المستخدم runneradmin وإضافة اللغة العربية وتوافق RDP
       # =========================================================================
-      - name: Stage 1 - Account & Windows 7 Legacy RDP Setup
+      - name: Stage 1 - Account, Arabic Keyboard & RDP Setup
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
@@ -47,7 +47,14 @@ jobs:
           net localgroup Administrators runneradmin /add
           net localgroup 'Remote Desktop Users' runneradmin /add
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع mstsc و xfreerdp
+          # 1.3 إضافة اللغة العربية لردة الكيبورد (Alt + Shift)
+          $LangList = Get-WinUserLanguageList
+          if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
+              $LangList.Add('ar-SA')
+              Set-WinUserLanguageList -LanguageTag $LangList -Force
+          }
+
+          # 1.4 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع mstsc و xfreerdp
           $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
           $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
           Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
@@ -55,7 +62,7 @@ jobs:
           Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
           Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
 
-          # 1.4 تفعيل 60 FPS وإلغاء اختناق الماوس والشبكة
+          # 1.5 تفعيل 60 FPS وإلغاء اختناق الماوس والشبكة
           $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
           Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
@@ -78,7 +85,7 @@ jobs:
           $CinemaDir = Join-Path $DesktopPath 'Cinema_Wallpapers'
           if (!(Test-Path $CinemaDir)) { New-Item -Path $CinemaDir -ItemType Directory -Force | Out-Null }
 
-          # 2.1 تحميل باقة خلفيات سينمائية بدقة 4K (Interstellar, Dark Knight, Cyberpunk, Peaky Blinders)
+          # 2.1 تحميل باقة خلفيات سينمائية بدقة 4K
           $Wallpapers = @{
               '01_Interstellar_Gargantua.jpg'    = 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80'
               '02_Dark_Knight_Gotham.jpg'        = 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=80'
@@ -122,29 +129,27 @@ jobs:
           [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_Media_4K.ps1'), $DownloaderLines, [System.Text.Encoding]::UTF8)
 
       # =========================================================================
-      # 3. تثبيت Android Studio وLively Wallpaper والأدوات في الخلفية (بدون تأخير الإقلاع)
+      # 3. تثبيت Android Studio والأدوات في الخلفية (بدون Lively Wallpaper)
       # =========================================================================
-      - name: Stage 3 - Background Deployment for Android Studio & Lively Wallpaper
+      - name: Stage 3 - Background Deployment for Android Studio & Tools
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           $ScriptPath = Join-Path $env:TEMP 'Install_Apps.ps1'
 
-          # سكريبت تثبيت تلقائي يشتغل في الخلفية فور تشغيل النظام
+          # سكريبت تثبيت تلقائي بدون Lively Wallpaper
           $InstallScript = @'
           Start-Sleep -Seconds 5
           winget install --id Google.AndroidStudio --silent --accept-source-agreements --accept-package-agreements
-          winget install --id rocksdanister.LivelyWallpaper --silent --accept-source-agreements --accept-package-agreements
           winget install --id VideoLAN.VLC --silent --accept-source-agreements --accept-package-agreements
           winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
           '@
           [System.IO.File]::WriteAllText($ScriptPath, $InstallScript, [System.Text.Encoding]::UTF8)
 
-          # إطلاق التثبيت في عملية منفصلة بالخلفية لفتح الـ RDP فوراً
           Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File $ScriptPath" -WindowStyle Hidden
 
       # =========================================================================
-      # 4. تشغيل نفق Bore TCP النقي والمراقبة الحية (فتح خلال 8 ثوانٍ)
+      # 4. تشغيل نفق Bore TCP والمراقبة الحية
       # =========================================================================
       - name: Stage 4 - Launch Pure Bore TCP Engine & Live Session Watchdog
         shell: powershell
@@ -155,7 +160,7 @@ jobs:
           $Password = '${{ github.event.inputs.rdp_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
 
-          # 4.1 تحميل محرك Bore المستقل
+          # 4.1 تحميل محرك Bore
           Write-Host '[*] Initializing Pure Bore TCP Multiplexer...' -ForegroundColor Cyan
           $zipPath = Join-Path $env:TEMP 'bore.zip'
           $boreDir = Join-Path $env:TEMP 'bore'
@@ -192,13 +197,14 @@ jobs:
           # 4.4 طباعة لوحة التحكم
           Write-Host ''
           Write-Host '================================================================' -ForegroundColor Green
-          Write-Host '  🎉 DEVELOPER & CINEMA WORKSTATION ONLINE (FAST BOOT ACTIVE)   ' -ForegroundColor Green
+          Write-Host '   🎉 DEVELOPER & CINEMA WORKSTATION ONLINE (FAST BOOT ACTIVE)   ' -ForegroundColor Green
           Write-Host '================================================================' -ForegroundColor Green
           Write-Host "  RDP Address      : $rdpAddress" -ForegroundColor Yellow
           Write-Host '  Username         : runneradmin' -ForegroundColor Cyan
           Write-Host "  Password         : $Password" -ForegroundColor Cyan
+          Write-Host '  Keyboard Layout  : English (US) + Arabic (ar-SA) [Alt+Shift]' -ForegroundColor Green
           Write-Host '  Theme            : Deep Dark Mode + 4K Cinema Wallpapers' -ForegroundColor Magenta
-          Write-Host '  Preloaded Apps   : Android Studio, Lively Wallpaper, VLC, 7-Zip' -ForegroundColor Green
+          Write-Host '  Preloaded Apps   : Android Studio, VLC Player, 7-Zip' -ForegroundColor Green
           Write-Host '================================================================' -ForegroundColor Green
           Write-Host ''
 
@@ -213,7 +219,8 @@ jobs:
           | **Host / Address** | ``$rdpAddress`` |
           | **Username** | ``runneradmin`` |
           | **Password** | ``$Password`` |
-          | **Installed Suite** | Android Studio, Lively Wallpaper, VLC Player |
+          | **Keyboard Layout** | English + Arabic (`ar-SA`) [Switch: `Alt + Shift`] |
+          | **Installed Suite** | Android Studio, VLC Player, 7-Zip |
           | **Wallpapers Hub** | ``Desktop\Cinema_Wallpapers`` |
 
           ### 💻 antiX Linux Connection Command:
@@ -225,7 +232,7 @@ jobs:
               [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
           }
 
-          # 4.6 حلقة المراقبة الحية للحفاظ على الجلسة حتى 6 ساعات
+          # 4.6 حلقة المراقبة الحية للحفاظ على الجلسة
           $TotalMinutes = 350
           $Elapsed = 0
 
