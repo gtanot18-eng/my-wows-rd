@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================================================================
-      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي
+      # 1. تهيئة اللغة العربية والوضع الليلي
       # =========================================================================
       - name: Setup System & Arabic
         shell: powershell
@@ -39,38 +39,73 @@ jobs:
           Set-ItemProperty -Path $ThemePath -Name 'SystemUsesLightTheme' -Value 0 -Type DWord -Force
 
       # =========================================================================
-      # 2. تثبيت RustDesk وتوليد الـ ID المباشر
+      # 2. تحميل وتثبيت RustDesk مباشرة وتوليد الـ ID
       # =========================================================================
-      - name: Install & Launch RustDesk
+      - name: Direct Download & Configure RustDesk
         shell: powershell
         run: |
-          $ErrorActionPreference = 'SilentlyContinue'
+          $ErrorActionPreference = 'Continue'
+          
+          # 2.1 جلب رابط أحدث إصدار من GitHub API مباشرة لتفادي winget
+          Write-Host "[*] Fetching RustDesk installer from GitHub API..." -ForegroundColor Cyan
+          $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.3.8/rustdesk-1.3.8-x86_64.exe"
+          try {
+              $release = Invoke-RestMethod -Uri "https://api.github.com/repos/rustdesk/rustdesk/releases/latest" -UseBasicParsing
+              $asset = $release.assets | Where-Object { $_.name -like "*x86_64.exe" -and $_.name -notlike "*sciter*" } | Select-Object -First 1
+              if ($asset) { $downloadUrl = $asset.browser_download_url }
+          } catch {}
 
-          Write-Host "[*] Downloading RustDesk..." -ForegroundColor Cyan
-          winget install --id RustDesk.RustDesk --silent --accept-source-agreements --accept-package-agreements
+          $setupExe = Join-Path $env:TEMP "rustdesk_setup.exe"
+          Write-Host "[*] Downloading: $downloadUrl" -ForegroundColor Cyan
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $setupExe -UseBasicParsing
 
-          Start-Sleep -Seconds 5
-          $RustDeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
+          # 2.2 التثبيت الصامت كـ Service
+          Write-Host "[*] Installing RustDesk Service..." -ForegroundColor Cyan
+          Start-Process -FilePath $setupExe -ArgumentList "--silent-install" -Wait
+          Start-Sleep -Seconds 6
 
-          # تعيين كلمة المرور المباشرة
+          $RustDeskPath = "C:\Program Files\RustDesk\rustdesk.exe"
+          if (-not (Test-Path $RustDeskPath)) {
+              $RustDeskPath = "C:\Program Files (x86)\RustDesk\rustdesk.exe"
+          }
+
+          # 2.3 تشغيل الخدمة وتعيين كلمة المرور
+          Start-Service -Name "rustdesk" -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+
           $Password = '${{ github.event.inputs.rustdesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
 
-          & "$RustDeskExe" --password "$Password"
+          Write-Host "[*] Setting Password..." -ForegroundColor Cyan
+          & "$RustDeskPath" --password "$Password"
 
-          # استخراج ID الخاص بالسيرفر
+          # 2.4 استخراج الـ ID بـ CLI وقراءة ملفات التكوين كـ Fallback
           $RustDeskID = ""
           $retry = 0
           while ([string]::IsNullOrWhiteSpace($RustDeskID) -and $retry -lt 15) {
               Start-Sleep -Seconds 2
               $retry++
-              $rawId = & "$RustDeskExe" --get-id
-              if ($rawId -match '\d+') {
+              $rawId = & "$RustDeskPath" --get-id
+              if ($rawId -match '\d{9,10}') {
                   $RustDeskID = $matches[0]
               }
           }
 
+          if ([string]::IsNullOrWhiteSpace($RustDeskID)) {
+              $configFiles = Get-ChildItem -Path "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config" -Filter "*.toml" -Recurse -ErrorAction SilentlyContinue
+              foreach ($file in $configFiles) {
+                  $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+                  if ($content -match 'id\s*=\s*"(\d+)"') {
+                      $RustDeskID = $matches[1]
+                      break
+                  }
+              }
+          }
+
+          # 2.5 طباعة النتيجة
           Write-Host ""
+          Write-Host "==========================================" -ForegroundColor Green
+          Write-Host " 🎉 RUSTDESK CLOUD WORKSTATION ONLINE" -ForegroundColor Green
           Write-Host "==========================================" -ForegroundColor Green
           Write-Host " RUSTDESK ID : $RustDeskID" -ForegroundColor Yellow
           Write-Host " PASSWORD    : $Password" -ForegroundColor Cyan
