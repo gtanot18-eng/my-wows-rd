@@ -1,239 +1,317 @@
-name: Developer & Cinema Edition Windows RDP 2026
+#Requires -RunAsAdministrator
+<#
+.SYNOPSIS
+    Complete Local System Provisioning & Virtual Display Driver Setup
+.DESCRIPTION
+    1. Optimizes RDP rendering & TCP stack for low latency.
+    2. Installs and configures MttVDD (Virtual Display Driver) at 1080p@60Hz.
+    3. Configures system UI (Dark Mode) & adds Arabic keyboard layout.
+    4. Deploys baseline applications via winget (e.g., VLC).
+.NOTES
+    Version : 2.0.0
+    Requires: PowerShell 5.1+, Windows 10/Server 2019+, Admin rights
+#>
 
-on:
-  workflow_dispatch:
-    inputs:
-      rdp_password:
-        description: 'RDP Password'
-        required: true
-        default: 'half'
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-jobs:
-  rdp-deployment:
-    runs-on: windows-latest
-    timeout-minutes: 360
+# ─── Global Configuration ─────────────────────────────────────────────────────
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+$Config = @{
+    DriverRepo   = 'https://github.com/itsmikethetech/Virtual-Display-Driver'
+    ReleasesApi  = 'https://api.github.com/repos/itsmikethetech/Virtual-Display-Driver/releases/latest'
+    InstallDir   = 'C:\VirtualDisplay'
+    ResolutionW  = 1920
+    ResolutionH  = 1080
+    RefreshRate  = 60
+}
 
-      # =========================================================================
-      # 1. تهيئة النظام، المستخدم runneradmin وتوافق Windows 7 (كلمة المرور: half)
-      # =========================================================================
-      - name: Stage 1 - Account & Windows 7 Legacy RDP Setup
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 
-          # 1.1 فك تعقيد كلمة المرور
-          $secCfg = Join-Path $env:TEMP 'secpol.cfg'
-          $secSdb = Join-Path $env:TEMP 'secpol.sdb'
-          secedit /export /cfg $secCfg /quiet
-          if (Test-Path $secCfg) {
-              $content = Get-Content $secCfg
-              $content = $content -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0'
-              $content = $content -replace 'MinimumPasswordLength = \d+', 'MinimumPasswordLength = 0'
-              Set-Content -Path $secCfg -Value $content
-              secedit /configure /db $secSdb /cfg $secCfg /areas SECURITYPOLICY /quiet
-              Remove-Item $secCfg, $secSdb -Force -ErrorAction SilentlyContinue
-          }
+function Write-Section ([string]$Title) {
+    Write-Host "`n┌── $Title" -ForegroundColor Cyan
+}
 
-          # 1.2 تعيين كلمة المرور والمجموعات
-          $Password = '${{ github.event.inputs.rdp_password }}'
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
+function Write-Ok   ([string]$Msg) { Write-Host "│  [✓] $Msg" -ForegroundColor Green  }
+function Write-Info ([string]$Msg) { Write-Host "│  [i] $Msg" -ForegroundColor Yellow }
+function Write-Err  ([string]$Msg) { Write-Host "│  [!] $Msg" -ForegroundColor Red    }
 
-          net user runneradmin $Password /expires:never /active:yes
-          net localgroup Administrators runneradmin /add
-          net localgroup 'Remote Desktop Users' runneradmin /add
+function Set-RegValue {
+    param(
+        [string]$Path,
+        [string]$Name,
+        $Value,
+        [string]$Type = 'DWord'
+    )
+    if (-not (Test-Path $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+    Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -Force
+    Write-Ok "$Name = $Value"
+}
 
-          # 1.3 تفعيل RDP وإلغاء NLA وتخفيض التشفير للتوافق مع mstsc و xfreerdp
-          $TSPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
-          $WStPath = 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
-          Set-ItemProperty -Path $TSPath -Name 'fDenyTSConnections' -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name 'UserAuthentication' -Value 0 -Force
-          Set-ItemProperty -Path $WStPath -Name 'SecurityLayer' -Value 1 -Force
-          Set-ItemProperty -Path $WStPath -Name 'MinEncryptionLevel' -Value 1 -Force
+# ─── 1. RDP & Performance Optimization ───────────────────────────────────────
 
-          # 1.4 تفعيل 60 FPS وإلغاء اختناق الماوس والشبكة
-          $DwmPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations'
-          Set-ItemProperty -Path $DwmPath -Name 'DWMFRAMEINTERVAL' -Value 15 -Type DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TcpAckFrequency' -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'TCPNoDelay' -Value 1 -Type DWord -Force
-          Set-MpPreference -DisableRealtimeMonitoring $true
+Write-Section 'RDP Frame Rate & System Performance Setup'
+Set-RegValue `
+    -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' `
+    -Name 'DWMFRAMEINTERVAL' `
+    -Value 15   # 15 ms ≈ 60 fps remote rendering
 
-          Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
-          Restart-Service -Name TermService -Force
+# ─── 2. TCP Low-Latency Tuning ────────────────────────────────────────────────
 
-      # =========================================================================
-      # 2. تطبيق الثيم الأسود وتحميل حزمة خلفيات الأفلام والمسلسلات العالمية
-      # =========================================================================
-      - name: Stage 2 - Apply Dark Theme & Cinema Wallpapers Depot
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Write-Section 'TCP Low-Latency Stack Configuration'
+$TcpParams = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+@{
+    TcpAckFrequency = 1   # ACK on every segment
+    TCPNoDelay      = 1   # Disable Nagle's algorithm
+} | ForEach-Object { $_.GetEnumerator() } | ForEach-Object {
+    Set-RegValue -Path $TcpParams -Name $_.Key -Value $_.Value
+}
 
-          $DesktopPath = 'C:\Users\runneradmin\Desktop'
-          $CinemaDir = Join-Path $DesktopPath 'Cinema_Wallpapers'
-          if (!(Test-Path $CinemaDir)) { New-Item -Path $CinemaDir -ItemType Directory -Force | Out-Null }
+# ─── 3. UI Dark Theme Setup ───────────────────────────────────────────────────
 
-          # 2.1 تحميل باقة خلفيات سينمائية بدقة 4K (Interstellar, Dark Knight, Cyberpunk, Peaky Blinders)
-          $Wallpapers = @{
-              '01_Interstellar_Gargantua.jpg'    = 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1920&q=80'
-              '02_Dark_Knight_Gotham.jpg'        = 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=80'
-              '03_Blade_Runner_Neon.jpg'         = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1920&q=80'
-              '04_Cinema_Film_Noir.jpg'          = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1920&q=80'
-              '05_Deep_Space_Cosmos.jpg'         = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80'
-          }
+Write-Section 'System & App Dark Theme'
+$ThemePath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+@{
+    AppsUseLightTheme   = 0
+    SystemUsesLightTheme = 0
+} | ForEach-Object { $_.GetEnumerator() } | ForEach-Object {
+    Set-RegValue -Path $ThemePath -Name $_.Key -Value $_.Value
+}
 
-          $Client = New-Object System.Net.WebClient
-          foreach ($wp in $Wallpapers.Keys) {
-              $Target = Join-Path $CinemaDir $wp
-              try { $Client.DownloadFile($Wallpapers[$wp], $Target) } catch {}
-          }
+# ─── 4. Keyboard Language Configuration ───────────────────────────────────────
 
-          # 2.2 تعيين خلفية الشاشة وتفعيل الوضع الليلي الكامل (Dark Theme)
-          $DefaultWallpaper = Join-Path $CinemaDir '01_Interstellar_Gargantua.jpg'
-          if (Test-Path $DefaultWallpaper) {
-              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'Wallpaper' -Value $DefaultWallpaper -Force
-              Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value '10' -Force
-              rundll32.exe user32.dll, UpdatePerUserSystemParameters
-          }
+Write-Section 'Keyboard Language Configuration'
+try {
+    $LangList = Get-WinUserLanguageList
+    if ($LangList.LanguageTag -notcontains 'ar-SA') {
+        $LangList.Add('ar-SA')
+        Set-WinUserLanguageList -LanguageList $LangList -Force
+        Write-Ok 'Arabic (ar-SA) keyboard added'
+    } else {
+        Write-Info 'Arabic keyboard already present — skipped'
+    }
+} catch {
+    Write-Err "Language config failed: $_"
+}
 
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
+# ─── 5. Application Installation (winget) ─────────────────────────────────────
 
-          # 2.3 سكريبت تحميل أي فيلم، حلقة، أو مقطع يوتيوب بجودة 4K على سطح المكتب
-          $DownloaderLines = @(
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              'Write-Host "         CINEMA & MEDIA 4K VIDEO DOWNLOADER               " -ForegroundColor Yellow',
-              'Write-Host "==========================================================" -ForegroundColor Cyan',
-              '$url = Read-Host "Paste Video URL (YouTube, Vimeo, Media Source)"',
-              'if ($url) {',
-              '    $outDir = "C:\Users\runneradmin\Desktop\Cinema_Wallpapers\%(title)s.%(ext)s"',
-              '    Write-Host "[*] Downloading in Highest Quality via yt-dlp..." -ForegroundColor Magenta',
-              '    winget install --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements',
-              '    yt-dlp -f "bestvideo+bestaudio/best" --no-playlist -o $outDir $url',
-              '    Write-Host "[✓] Media saved successfully!" -ForegroundColor Green',
-              '}',
-              'Start-Sleep -Seconds 3'
-          )
-          [System.IO.File]::WriteAllLines((Join-Path $DesktopPath 'Download_Media_4K.ps1'), $DownloaderLines, [System.Text.Encoding]::UTF8)
+Write-Section 'Background Application Deployment'
+$Apps = @(
+    @{ Id = 'VideoLAN.VLC'; Name = 'VLC Media Player' }
+)
 
-      # =========================================================================
-      # 3. تثبيت Android Studio وLively Wallpaper والأدوات في الخلفية (بدون تأخير الإقلاع)
-      # =========================================================================
-      - name: Stage 3 - Background Deployment for Android Studio & Lively Wallpaper
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          $ScriptPath = Join-Path $env:TEMP 'Install_Apps.ps1'
+foreach ($App in $Apps) {
+    Write-Info "Installing $($App.Name)..."
+    $result = winget install `
+        --id   $App.Id `
+        --silent `
+        --accept-source-agreements `
+        --accept-package-agreements `
+        2>&1
 
-          # سكريبت تثبيت تلقائي يشتغل في الخلفية فور تشغيل النظام
-          $InstallScript = @'
-          Start-Sleep -Seconds 5
-          winget install --id Google.AndroidStudio --silent --accept-source-agreements --accept-package-agreements
-          winget install --id rocksdanister.LivelyWallpaper --silent --accept-source-agreements --accept-package-agreements
-          winget install --id VideoLAN.VLC --silent --accept-source-agreements --accept-package-agreements
-          winget install --id 7zip.7zip --silent --accept-source-agreements --accept-package-agreements
-          '@
-          [System.IO.File]::WriteAllText($ScriptPath, $InstallScript, [System.Text.Encoding]::UTF8)
+    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189) {
+        Write-Ok "$($App.Name) ready"
+    } else {
+        Write-Err "$($App.Name) — winget exit code: $LASTEXITCODE"
+    }
+}
 
-          # إطلاق التثبيت في عملية منفصلة بالخلفية لفتح الـ RDP فوراً
-          Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File $ScriptPath" -WindowStyle Hidden
+# ─── 6. Virtual Display Driver (MttVDD) Installation ─────────────────────────
 
-      # =========================================================================
-      # 4. تشغيل نفق Bore TCP النقي والمراقبة الحية (فتح خلال 8 ثوانٍ)
-      # =========================================================================
-      - name: Stage 4 - Launch Pure Bore TCP Engine & Live Session Watchdog
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'SilentlyContinue'
-          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Write-Section 'Pre-flight Virtual Display System Check'
+$existingDisplays = Get-PnpDevice -Class Display -ErrorAction SilentlyContinue
+if ($existingDisplays) {
+    Write-Info 'Found existing display device(s):'
+    $existingDisplays | ForEach-Object { Write-Info "  → $($_.FriendlyName) [$($_.Status)]" }
+} else {
+    Write-Info 'No physical display detected — headless mode confirmed.'
+}
 
-          $Password = '${{ github.event.inputs.rdp_password }}'
-          if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'half' }
+Write-Section 'Preparing Virtual Display Directory'
+try {
+    if (-not (Test-Path $Config.InstallDir)) {
+        New-Item -Path $Config.InstallDir -ItemType Directory -Force | Out-Null
+    }
+    Write-Ok "Working directory: $($Config.InstallDir)"
+} catch {
+    Write-Err "Cannot create directory: $_"
+    exit 1
+}
 
-          # 4.1 تحميل محرك Bore المستقل
-          Write-Host '[*] Initializing Pure Bore TCP Multiplexer...' -ForegroundColor Cyan
-          $zipPath = Join-Path $env:TEMP 'bore.zip'
-          $boreDir = Join-Path $env:TEMP 'bore'
-          $url = 'https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip'
-          (New-Object System.Net.WebClient).DownloadFile($url, $zipPath)
-          Expand-Archive -Path $zipPath -DestinationPath $boreDir -Force
+Write-Section 'Downloading Virtual Display Driver (MttVDD)'
+try {
+    $release = Invoke-RestMethod -Uri $Config.ReleasesApi -UseBasicParsing
+    $tag     = $release.tag_name
+    $asset   = $release.assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1
 
-          $boreExe = Join-Path $boreDir 'bore.exe'
-          $logPath = Join-Path $env:TEMP 'bore.log'
+    if (-not $asset) { throw "No ZIP asset found in release $tag" }
 
-          # 4.2 إطلاق النفق وتوجيه المنفذ 3389
-          $proc = Start-Process -FilePath $boreExe -ArgumentList 'local 3389 --to bore.pub' -RedirectStandardOutput $logPath -RedirectStandardError (Join-Path $env:TEMP 'bore_err.log') -PassThru
+    $zipPath = Join-Path $Config.InstallDir "$($asset.name)"
+    Write-Info "Release : $tag"
+    Write-Info "Asset   : $($asset.name) ($([math]::Round($asset.size/1MB, 1)) MB)"
 
-          # 4.3 استخراج المنفذ المخصص فورياً
-          $rdpAddress = $null
-          $attempts = 0
-          while ($attempts -lt 25 -and -not $rdpAddress) {
-              Start-Sleep -Seconds 1
-              $attempts++
-              if (Test-Path $logPath) {
-                  $content = Get-Content $logPath -Raw
-                  if ($content -match 'listening at bore\.pub:([0-9]+)') {
-                      $rdpAddress = 'bore.pub:' + $matches[1]
-                  }
-              }
-          }
+    $wc = New-Object System.Net.WebClient
+    $wc.DownloadFile($asset.browser_download_url, $zipPath)
+    Write-Ok "Downloaded to: $zipPath"
+} catch {
+    Write-Err "Download failed: $_"
+    Write-Info "Manual download: $($Config.DriverRepo)/releases"
+    exit 1
+}
 
-          if (-not $rdpAddress) {
-              Write-Host '[!] Bore tunnel negotiation failed. Logs:' -ForegroundColor Red
-              if (Test-Path $logPath) { Get-Content $logPath }
-              exit 1
-          }
+Write-Section 'Extracting Driver Package'
+try {
+    $extractPath = Join-Path $Config.InstallDir 'driver'
+    Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+    Write-Ok "Extracted to: $extractPath"
 
-          # 4.4 طباعة لوحة التحكم
-          Write-Host ''
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host '  🎉 DEVELOPER & CINEMA WORKSTATION ONLINE (FAST BOOT ACTIVE)   ' -ForegroundColor Green
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host "  RDP Address      : $rdpAddress" -ForegroundColor Yellow
-          Write-Host '  Username         : runneradmin' -ForegroundColor Cyan
-          Write-Host "  Password         : $Password" -ForegroundColor Cyan
-          Write-Host '  Theme            : Deep Dark Mode + 4K Cinema Wallpapers' -ForegroundColor Magenta
-          Write-Host '  Preloaded Apps   : Android Studio, Lively Wallpaper, VLC, 7-Zip' -ForegroundColor Green
-          Write-Host '================================================================' -ForegroundColor Green
-          Write-Host ''
+    $infFile = Get-ChildItem -Path $extractPath -Filter '*.inf' -Recurse | Select-Object -First 1
+    if (-not $infFile) { throw 'No .inf file found in extracted package' }
 
-          # 4.5 كتابة ملخص الجلسة في GitHub Summary
-          if ($env:GITHUB_STEP_SUMMARY) {
-              $SummaryMarkdown = @"
-          # 🎬 Developer & Cinema Edition Windows RDP
+    Write-Ok "INF file: $($infFile.FullName)"
+} catch {
+    Write-Err "Extraction failed: $_"
+    exit 1
+}
 
-          ### 🚀 Connection Credentials
-          | Parameter | Value |
-          | :--- | :--- |
-          | **Host / Address** | ``$rdpAddress`` |
-          | **Username** | ``runneradmin`` |
-          | **Password** | ``$Password`` |
-          | **Installed Suite** | Android Studio, Lively Wallpaper, VLC Player |
-          | **Wallpapers Hub** | ``Desktop\Cinema_Wallpapers`` |
+Write-Section 'Driver Signature & Certificate Setup'
+try {
+    $certFile = Get-ChildItem -Path $extractPath -Filter '*.cer' -Recurse | Select-Object -First 1
+    if ($certFile) {
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certFile.FullName)
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(
+            [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher,
+            [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
+        )
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        $store.Add($cert)
+        $store.Close()
+        Write-Ok "Certificate installed: $($cert.Subject)"
+    } else {
+        Write-Info 'No .cer file found — skipping cert install'
+    }
 
-          ### 💻 antiX Linux Connection Command:
-          ``xfreerdp /v:$rdpAddress /u:runneradmin /p:$Password /cert:ignore +clipboard /dynamic-resolution /gdi:hw``
+    $sigCheck = & sigverif /q /s /u "$($infFile.FullName)" 2>&1
+    $needsTestSign = $sigCheck -match 'not digitally signed'
 
-          ### 🖥️ Windows Connection Command:
-          ``mstsc /v:$rdpAddress``
-          "@
-              [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
-          }
+    if ($needsTestSign) {
+        Write-Info 'Driver is test-signed — enabling Test Signing Mode'
+        & bcdedit /set testsigning on | Out-Null
+        Write-Ok 'Test Signing enabled (reboot required)'
+    } else {
+        Write-Ok 'Driver signature valid — Test Signing NOT required'
+    }
+} catch {
+    Write-Err "Certificate setup error: $_"
+}
 
-          # 4.6 حلقة المراقبة الحية للحفاظ على الجلسة حتى 6 ساعات
-          $TotalMinutes = 350
-          $Elapsed = 0
+Write-Section 'Installing Driver via PnPUtil'
+try {
+    $pnpResult = & pnputil /add-driver "$($infFile.FullName)" /install 2>&1
+    Write-Host ($pnpResult | Out-String) -ForegroundColor Gray
 
-          while ($Elapsed -lt $TotalMinutes -and -not $proc.HasExited) {
-              Start-Sleep -Seconds 60
-              $Elapsed++
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok 'Driver installed successfully'
+    } elseif ($LASTEXITCODE -eq 3010) {
+        Write-Info 'Driver installed — reboot required to activate'
+    } else {
+        throw "pnputil exit code: $LASTEXITCODE"
+    }
+} catch {
+    Write-Err "Driver install failed: $_"
+    exit 1
+}
 
-              if ($Elapsed % 10 -eq 0) {
-                  Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min | Workstation Active" -ForegroundColor Gray
-              }
-          }
+Write-Section "Configuring Virtual Display: $($Config.ResolutionW)x$($Config.ResolutionH) @ $($Config.RefreshRate)Hz"
+try {
+    $timeout = 30
+    $elapsed = 0
+    $vDisplay = $null
+
+    while ($elapsed -lt $timeout -and -not $vDisplay) {
+        Start-Sleep -Seconds 2
+        $elapsed += 2
+        $vDisplay = Get-PnpDevice -Class Display -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FriendlyName -match 'Virtual|IDD|MttVDD' }
+    }
+
+    if ($vDisplay) {
+        Write-Ok "Virtual display detected: $($vDisplay.FriendlyName)"
+
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public class DisplayConfig {
+    [DllImport("user32.dll")]
+    public static extern int ChangeDisplaySettingsEx(
+        string lpszDeviceName, ref DEVMODE lpDevMode,
+        IntPtr hwnd, uint dwflags, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumDisplaySettings(
+        string deviceName, int modeNum, ref DEVMODE devMode);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct DEVMODE {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmDeviceName;
+        public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+        public uint dmFields;
+        public int dmPositionX, dmPositionY;
+        public uint dmDisplayOrientation, dmDisplayFixedOutput;
+        public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmFormName;
+        public short dmLogPixels;
+        public uint dmBitsPerPel, dmPelsWidth, dmPelsHeight;
+        public uint dmDisplayFlags, dmDisplayFrequency;
+        public uint dmICMMethod, dmICMIntent, dmMediaType, dmDitherType;
+        public uint dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+    }
+
+    public const int ENUM_CURRENT_SETTINGS = -1;
+    public const uint CDS_UPDATEREGISTRY = 0x01;
+    public const uint DM_PELSWIDTH  = 0x80000;
+    public const uint DM_PELSHEIGHT = 0x100000;
+    public const uint DM_DISPLAYFREQUENCY = 0x400000;
+}
+'@
+
+        $devMode = New-Object DisplayConfig+DEVMODE
+        $devMode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($devMode)
+        [DisplayConfig]::EnumDisplaySettings($null, [DisplayConfig]::ENUM_CURRENT_SETTINGS, [ref]$devMode) | Out-Null
+
+        $devMode.dmPelsWidth        = $Config.ResolutionW
+        $devMode.dmPelsHeight       = $Config.ResolutionH
+        $devMode.dmDisplayFrequency = $Config.RefreshRate
+        $devMode.dmFields = [DisplayConfig]::DM_PELSWIDTH -bor
+                            [DisplayConfig]::DM_PELSHEIGHT -bor
+                            [DisplayConfig]::DM_DISPLAYFREQUENCY
+
+        $result = [DisplayConfig]::ChangeDisplaySettingsEx($null, [ref]$devMode, [IntPtr]::Zero, [DisplayConfig]::CDS_UPDATEREGISTRY, [IntPtr]::Zero)
+
+        if ($result -eq 0) {
+            Write-Ok "Resolution set: $($Config.ResolutionW)x$($Config.ResolutionH) @ $($Config.RefreshRate)Hz"
+        } else {
+            Write-Info "ChangeDisplaySettingsEx code: $result (may need reboot)"
+        }
+    } else {
+        Write-Info 'Virtual display not visible yet — reboot recommended'
+    }
+} catch {
+    Write-Err "Resolution config error: $_"
+}
+
+# ─── 7. Final Summary ─────────────────────────────────────────────────────────
+
+Write-Host "`n════════════════════════════════════════" -ForegroundColor Green
+Write-Host "  Provisioning & Driver Setup Complete" -ForegroundColor Green
+Write-Host "════════════════════════════════════════" -ForegroundColor Green
+Write-Host "  Optimizations : RDP 60 FPS, TCP NoDelay, Dark Mode, ar-SA"
+Write-Host "  Driver        : MttVDD (Virtual Display)"
+Write-Host "  Resolution    : $($Config.ResolutionW)x$($Config.ResolutionH) @ $($Config.RefreshRate)Hz"
+Write-Host "════════════════════════════════════════" -ForegroundColor Green
