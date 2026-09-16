@@ -37,52 +37,59 @@ jobs:
           Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
 
       # =========================================================================
-      # 2. تثبيت AnyDesk وتعيين كلمة المرور واستخراج الـ ID المضمون
+      # 2. تثبيت AnyDesk واستخراج الـ ID المباشر من system.conf
       # =========================================================================
       - name: Stage 2 - Install & Configure AnyDesk Service
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           
-          # 2.1 التحميل المباشر لـ AnyDesk لتفادي مشاكل winget
+          # 2.1 تحميل وتثبيت AnyDesk
           Write-Host "[*] Downloading AnyDesk Executable..." -ForegroundColor Cyan
           $setupFile = Join-Path $env:TEMP "AnyDesk.exe"
           Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $setupFile -UseBasicParsing
 
-          # 2.2 تثبيت AnyDesk كخدمة نظام وتثبيته في المجلد الافتراضي
           Write-Host "[*] Installing AnyDesk Silent Service..." -ForegroundColor Cyan
           Start-Process -FilePath $setupFile -ArgumentList "--install `"C:\Program Files (x86)\AnyDesk`" --start-with-win --silent" -Wait
 
-          Start-Sleep -Seconds 5
           $AnyDeskPath = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
 
-          # 2.3 التأكد من تشغيل خدمة AnyDesk
-          Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
+          # 2.2 إعادة تشغيل الخدمة لتوليد ملف النظام
+          Write-Host "[*] Restarting AnyDesk Service to generate ID..." -ForegroundColor Cyan
+          net stop anydesk 2>&1 | Out-Null
+          net start anydesk 2>&1 | Out-Null
+          Start-Sleep -Seconds 5
 
-          # 2.4 تعيين كلمة المرور باستخدام CMD لضمان التمرير الصحيح للأمر
+          # 2.3 تعيين كلمة المرور
           $Password = '${{ github.event.inputs.anydesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
-
           cmd.exe /c "echo $Password | `"$AnyDeskPath`" --set-password"
 
-          # 2.5 حلقة تكرارية لاستخراج AnyDesk ID بنجاح
+          # 2.4 استخراج AnyDesk ID مباشرة من ملف system.conf
           $AnyDeskID = ""
+          $confPath = "C:\ProgramData\AnyDesk\system.conf"
           $retry = 0
-          while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 15) {
+
+          while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 20) {
               Start-Sleep -Seconds 2
               $retry++
-              $rawId = & "$AnyDeskPath" --get-id
-              if ($rawId -match '^\d+$') {
-                  $AnyDeskID = $rawId.Trim()
+
+              if (Test-Path $confPath) {
+                  $content = Get-Content $confPath -ErrorAction SilentlyContinue
+                  if ($content -match 'ad\.anynet\.id\s*=\s*([0-9\s]+)') {
+                      $AnyDeskID = ($matches[1] -replace '\s','').Trim()
+                  }
+              }
+
+              if ([string]::IsNullOrWhiteSpace($AnyDeskID)) {
+                  $cmdId = & "$AnyDeskPath" --get-id
+                  if ($cmdId -match '\d+') {
+                      $AnyDeskID = ($cmdId -replace '\D','').Trim()
+                  }
               }
           }
 
-          if ([string]::IsNullOrWhiteSpace($AnyDeskID)) {
-              Write-Host "[!] Failed to get AnyDesk ID. Retrying force command..." -ForegroundColor Red
-              $AnyDeskID = (& "$AnyDeskPath" --get-id).Trim()
-          }
-
-          # 2.6 طباعة البيانات
+          # 2.5 طباعة البيانات
           Write-Host ""
           Write-Host "================================================================" -ForegroundColor Green
           Write-Host "   🎉 ANYDESK CLOUD WORKSTATION IS ONLINE                       " -ForegroundColor Green
@@ -93,7 +100,7 @@ jobs:
           Write-Host "================================================================" -ForegroundColor Green
           Write-Host ""
 
-          # 2.7 إضافة الملخص في صفحة GitHub Actions
+          # 2.6 إضافة الملخص في صفحة GitHub Actions
           if ($env:GITHUB_STEP_SUMMARY) {
               $SummaryMarkdown = @"
           # 🖥️ AnyDesk Cloud Workstation
