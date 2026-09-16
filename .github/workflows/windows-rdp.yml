@@ -17,36 +17,54 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # =========================================================================
+      # 1. تهيئة النظام، اللغة العربية، والوضع الليلي (محتوى آمن ضد الكراش)
+      # =========================================================================
       - name: Setup System & Arabic
         shell: powershell
         run: |
-          $LangList = Get-WinUserLanguageList
-          if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
-              $LangList.Add('ar-SA')
-              Set-WinUserLanguageList -LanguageTag $LangList -Force
-          }
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'AppsUseLightTheme' -Value 0 -Force
-          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Force
+          $ErrorActionPreference = 'SilentlyContinue'
 
+          # 1.1 إضافة اللغة العربية بأمان
+          try {
+              $LangList = Get-WinUserLanguageList
+              if (-not ($LangList.LanguageTag -contains 'ar-SA')) {
+                  $LangList.Add('ar-SA')
+                  Set-WinUserLanguageList -LanguageTag $LangList -Force
+              }
+          } catch {}
+
+          # 1.2 إنشاء مسار الريجستري وتفعيل الوضع الليلي بأمان
+          $ThemePath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+          if (-not (Test-Path $ThemePath)) {
+              New-Item -Path $ThemePath -Force | Out-Null
+          }
+          Set-ItemProperty -Path $ThemePath -Name 'AppsUseLightTheme' -Value 0 -Type DWord -Force
+          Set-ItemProperty -Path $ThemePath -Name 'SystemUsesLightTheme' -Value 0 -Type DWord -Force
+
+      # =========================================================================
+      # 2. تشغيل AnyDesk وتوليد الـ ID
+      # =========================================================================
       - name: Run AnyDesk Portable
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
-          
-          # تحميل AnyDesk المحمول
+
+          # 2.1 تحميل AnyDesk
+          Write-Host "[*] Downloading AnyDesk Executable..." -ForegroundColor Cyan
           $anydeskExe = Join-Path $env:TEMP "AnyDesk.exe"
           Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $anydeskExe -UseBasicParsing
 
-          # تعيين كلمة المرور وتشغيل العملية في الخلفية
+          # 2.2 تعيين كلمة المرور وتشغيل العملية
           $Password = '${{ github.event.inputs.anydesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
-          
+
           cmd.exe /c "echo $Password | `"$anydeskExe`" --set-password"
           Start-Process -FilePath $anydeskExe -ArgumentList "--start-with-win"
 
           Start-Sleep -Seconds 10
 
-          # محاولة استخراج ID بجميع الطرق الممكنة
+          # 2.3 محاولة استخراج ID
           $AnyDeskID = ""
           $retry = 0
           while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 15) {
@@ -58,17 +76,36 @@ jobs:
               }
           }
 
+          # 2.4 طباعة البيانات والملخص
+          Write-Host ""
           Write-Host "==========================================" -ForegroundColor Green
           Write-Host " ANYDESK ID : $AnyDeskID" -ForegroundColor Yellow
-          Write-Host " PASSWORD  : $Password" -ForegroundColor Cyan
+          Write-Host " PASSWORD   : $Password" -ForegroundColor Cyan
           Write-Host "==========================================" -ForegroundColor Green
+          Write-Host ""
 
+          if ($env:GITHUB_STEP_SUMMARY) {
+              $SummaryMarkdown = @"
+          # 🖥️ AnyDesk Workstation Online
+
+          ### 🔑 Connection Credentials
+          * **AnyDesk ID:** ``$AnyDeskID``
+          * **Password:** ``$Password``
+          "@
+              [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
+          }
+
+      # =========================================================================
+      # 3. الحفاظ على تشغيل الجلسة
+      # =========================================================================
       - name: Keep Alive
         shell: powershell
         run: |
+          $ErrorActionPreference = 'SilentlyContinue'
           $TotalMinutes = 350
           $Elapsed = 0
           while ($Elapsed -lt $TotalMinutes) {
               Start-Sleep -Seconds 60
               $Elapsed++
+              if ($Elapsed % 10 -eq 0) { Write-Host "[Heartbeat] Uptime: $Elapsed / $TotalMinutes min" }
           }
