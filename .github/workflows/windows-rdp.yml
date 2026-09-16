@@ -39,61 +39,65 @@ jobs:
           Set-ItemProperty -Path $ThemePath -Name 'SystemUsesLightTheme' -Value 0 -Type DWord -Force
 
       # =========================================================================
-      # 2. تحميل وتشغيل RustDesk المباشر وتوليد الـ ID
+      # 2. تثبيت RustDesk بصلاحيات المسؤول المباشرة واستخراج الـ ID
       # =========================================================================
-      - name: Direct Setup & Configure RustDesk
+      - name: Install & Launch RustDesk Service
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Continue'
-          
-          # 2.1 إنشاء مجلد مخصص للملف التنفيذي
-          $rustdeskDir = "C:\RustDesk"
-          New-Item -ItemType Directory -Force -Path $rustdeskDir | Out-Null
-          $rustdeskExe = Join-Path $rustdeskDir "rustdesk.exe"
+          $ErrorActionPreference = 'SilentlyContinue'
 
-          # 2.2 تحميل أحدث ملف تنفيذي مباشرة
-          Write-Host "[*] Downloading RustDesk 1.4.9 Standalone..." -ForegroundColor Cyan
-          $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.exe"
-          Invoke-WebRequest -Uri $downloadUrl -OutFile $rustdeskExe -UseBasicParsing
+          # 2.1 تنزيل ملف التثبيت
+          $setupExe = Join-Path $env:TEMP "rustdesk_setup.exe"
+          Write-Host "[*] Downloading RustDesk Setup..." -ForegroundColor Cyan
+          $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.3.8/rustdesk-1.3.8-x86_64.exe"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $setupExe -UseBasicParsing
 
-          # 2.3 تسجيل الخدمة بدون نافذة تثبيت وتأخير لتجنب التجمد
-          Write-Host "[*] Registering RustDesk Service Background..." -ForegroundColor Cyan
-          Start-Process -FilePath $rustdeskExe -ArgumentList "--install-service" -WindowStyle Hidden
-          Start-Sleep -Seconds 6
+          # 2.2 التثبيت الصامت بصلاحيات المسؤول Elevated
+          Write-Host "[*] Installing RustDesk with Admin Privileges..." -ForegroundColor Cyan
+          Start-Process -FilePath $setupExe -ArgumentList "--silent-install" -Verb RunAs -Wait
+          Start-Sleep -Seconds 10
 
-          # 2.4 تعيين كلمة المرور
+          $RustDeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
+          if (-not (Test-Path $RustDeskExe)) {
+              $RustDeskExe = "C:\Program Files (x86)\RustDesk\rustdesk.exe"
+          }
+
+          # 2.3 تشغيل الخدمة وتعيين كلمة المرور
+          net start rustdesk 2>&1 | Out-Null
+          Start-Sleep -Seconds 5
+
           $Password = '${{ github.event.inputs.rustdesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
 
           Write-Host "[*] Setting Access Password..." -ForegroundColor Cyan
-          & "$rustdeskExe" --password "$Password"
+          Start-Process -FilePath $RustDeskExe -ArgumentList "--password $Password" -Verb RunAs -Wait
           Start-Sleep -Seconds 3
 
-          # 2.5 استخراج الـ ID
+          # 2.4 استخراج الـ ID المباشر من ملفات التكوين (TOML) لتفادي أخطاء Pipe
           $RustDeskID = ""
+          $configPaths = @(
+              "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk2.toml",
+              "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
+              "$env:APPDATA\RustDesk\config\RustDesk2.toml",
+              "$env:APPDATA\RustDesk\config\RustDesk.toml"
+          )
+
           $retry = 0
           while ([string]::IsNullOrWhiteSpace($RustDeskID) -and $retry -lt 15) {
               Start-Sleep -Seconds 2
               $retry++
-              $rawId = & "$rustdeskExe" --get-id
-              if ($rawId -match '\d{9,10}') {
-                  $RustDeskID = $matches[0]
-              }
-          }
-
-          # 2.6 قراءة ملف الإعدادات كـ Fallback في حال تأخر الـ CLI
-          if ([string]::IsNullOrWhiteSpace($RustDeskID)) {
-              $configFiles = Get-ChildItem -Path "$env:APPDATA\RustDesk\config", "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config" -Filter "*.toml" -Recurse -ErrorAction SilentlyContinue
-              foreach ($file in $configFiles) {
-                  $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
-                  if ($content -match 'id\s*=\s*"(\d+)"') {
-                      $RustDeskID = $matches[1]
-                      break
+              foreach ($path in $configPaths) {
+                  if (Test-Path $path) {
+                      $content = Get-Content $path -Raw
+                      if ($content -match 'id\s*=\s*"(\d+)"' -or $content -match 'id\s*=\s*(\d+)') {
+                          $RustDeskID = $matches[1]
+                          break
+                      }
                   }
               }
           }
 
-          # 2.7 طباعة النتيجة النهائية
+          # 2.5 طباعة البيانات النهائية
           Write-Host ""
           Write-Host "==========================================" -ForegroundColor Green
           Write-Host " 🎉 RUSTDESK CLOUD WORKSTATION ONLINE" -ForegroundColor Green
