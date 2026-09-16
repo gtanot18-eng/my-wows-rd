@@ -60,12 +60,20 @@ try {
 
     $extractPath = Join-Path $Config.InstallDir "driver"
     Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+    # تثبيت الشهادة تلقائياً لتفادي توقف pnputil
+    $certFile = Get-ChildItem -Path $extractPath -Filter "*.cer" -Recurse | Select-Object -First 1
+    if ($certFile) {
+        CertUtil -addstore -f "TrustedPublisher" $certFile.FullName | Out-Null
+        CertUtil -addstore -f "Root" $certFile.FullName | Out-Null
+        Write-Ok "Certificate installed & trusted"
+    }
     
     $infFile = Get-ChildItem -Path $extractPath -Filter "*.inf" -Recurse | Select-Object -First 1
     if ($infFile) {
         Write-Section "Installing Driver"
-        & pnputil /add-driver "$($infFile.FullName)" /install
-        Write-Ok "Driver installation command executed"
+        $proc = Start-Process pnputil.exe -ArgumentList "/add-driver `"$($infFile.FullName)`" /install" -NoNewWindow -PassThru -Wait
+        Write-Ok "Driver installation completed (Exit Code: $($proc.ExitCode))"
     }
 } catch {
     Write-Err "Driver setup warning: $_"
