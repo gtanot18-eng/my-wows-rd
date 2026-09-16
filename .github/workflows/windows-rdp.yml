@@ -1,4 +1,4 @@
-name: Windows RDP
+name: Ultimate Windows RDP
 
 on:
   workflow_dispatch:
@@ -6,34 +6,65 @@ on:
     branches: [ main ]
 
 jobs:
-  setup:
+  build:
     runs-on: windows-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Run Provisioning Script
+      - name: 1. Setup RDP & Performance Registry
         shell: powershell
         run: |
-          Set-ExecutionPolicy Unrestricted -Scope Process -Force
-          .\setup.ps1
-
-      - name: Enable RDP & Start Bore Tunnel
-        shell: powershell
-        run: |
-          # 1. تعيين كلمة مرور للحساب
-          $Password = ConvertTo-SecureString "P@ssword1234!" -AsPlainText -Force
-          Set-LocalUser -Name "runneradmin" -Password $Password
-
-          # 2. تفعيل خدمة وجدار حماية RDP
+          # Enable RDP & Firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
 
-          # 3. تنزيل أداة bore
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip" -UseBasicParsing
-          Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
+          # Optimize RDP FPS & TCP Latency
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "DWMFRAMEINTERVAL" -Value 15 -Type DWord
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name "TcpAckFrequency" -Value 1 -Type DWord
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name "TCPNoDelay" -Value 1 -Type DWord
 
-          # 4. تشغيل النفق وإبقاء العملية قائمة
-          Write-Host "=== CONNECT TO YOUR RDP AT THE PORT BELOW ===" -ForegroundColor Green
-          cmd.exe /c "bore.exe local 3389 --to bore.pub"
+          # User Password Setup
+          $Password = ConvertTo-SecureString "P@ssword1234!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+          Write-Host "[+] RDP Optimization & Password Configured." -ForegroundColor Green
+
+      - name: 2. Deploy Tunnels (Ngrok + Bore Failover)
+        shell: powershell
+        env:
+          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          if ($env:NGROK_TOKEN) {
+            Write-Host "[*] Launching Ngrok Tunnel..." -ForegroundColor Cyan
+            Invoke-WebRequest -Uri "https://bin.equinox.io/c/b4Pvu3rwcdU/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip" -UseBasicParsing
+            Expand-Archive -Path "ngrok.zip" -DestinationPath "." -Force
+            .\ngrok.exe config add-authtoken $env:NGROK_TOKEN
+            Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+            Start-Sleep -Seconds 5
+            $log = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+            Write-Host "==========================================" -ForegroundColor Green
+            Write-Host " NGROK RDP ADDRESS: $($log.tunnels[0].public_url)" -ForegroundColor Yellow
+            Write-Host "==========================================" -ForegroundColor Green
+          } else {
+            Write-Host "[!] NGROK_AUTH_TOKEN secret not found. Falling back to Bore Tunnel..." -ForegroundColor Yellow
+            Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip" -UseBasicParsing
+            Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
+            Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -NoNewWindow
+            Write-Host "[+] Bore tunnel initiated. Check logs below for port." -ForegroundColor Green
+          }
+
+      - name: 3. Keep RDP Alive Loop
+        shell: powershell
+        run: |
+          Write-Host "==========================================" -ForegroundColor Cyan
+          Write-Host " RDP Server is ACTIVE! Connection Credentials:" -ForegroundColor Green
+          Write-Host " Username: runneradmin" -ForegroundColor White
+          Write-Host " Password: P@ssword1234!" -ForegroundColor White
+          Write-Host "==========================================" -ForegroundColor Cyan
+          
+          # Maintain execution for 6 hours (360 mins)
+          $i = 0
+          while ($i -lt 360) {
+            Start-Sleep -Seconds 60
+            $i++
+            Write-Host "[-] Session active for $i minutes..."
+          }
