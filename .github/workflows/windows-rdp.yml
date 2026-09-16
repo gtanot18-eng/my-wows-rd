@@ -8,7 +8,7 @@
     3. Configures system UI (Dark Mode) & adds Arabic keyboard layout.
     4. Deploys baseline applications via winget (e.g., VLC).
 .NOTES
-    Version : 2.0.0
+    Version : 2.0.1
     Requires: PowerShell 5.1+, Windows 10/Server 2019+, Admin rights
 #>
 
@@ -105,17 +105,15 @@ $Apps = @(
 
 foreach ($App in $Apps) {
     Write-Info "Installing $($App.Name)..."
-    $result = winget install `
-        --id   $App.Id `
-        --silent `
-        --accept-source-agreements `
-        --accept-package-agreements `
-        2>&1
-
-    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189) {
-        Write-Ok "$($App.Name) ready"
-    } else {
-        Write-Err "$($App.Name) — winget exit code: $LASTEXITCODE"
+    try {
+        $result = winget install --id $App.Id --silent --accept-source-agreements --accept-package-agreements 2>&1
+        if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189) {
+            Write-Ok "$($App.Name) ready"
+        } else {
+            Write-Err "$($App.Name) — winget exit code: $LASTEXITCODE"
+        }
+    } catch {
+        Write-Err "winget execution failed: $_"
     }
 }
 
@@ -143,6 +141,7 @@ try {
 
 Write-Section 'Downloading Virtual Display Driver (MttVDD)'
 try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $release = Invoke-RestMethod -Uri $Config.ReleasesApi -UseBasicParsing
     $tag     = $release.tag_name
     $asset   = $release.assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1
@@ -153,8 +152,7 @@ try {
     Write-Info "Release : $tag"
     Write-Info "Asset   : $($asset.name) ($([math]::Round($asset.size/1MB, 1)) MB)"
 
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($asset.browser_download_url, $zipPath)
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UseBasicParsing
     Write-Ok "Downloaded to: $zipPath"
 } catch {
     Write-Err "Download failed: $_"
@@ -194,15 +192,16 @@ try {
         Write-Info 'No .cer file found — skipping cert install'
     }
 
-    $sigCheck = & sigverif /q /s /u "$($infFile.FullName)" 2>&1
-    $needsTestSign = $sigCheck -match 'not digitally signed'
-
-    if ($needsTestSign) {
-        Write-Info 'Driver is test-signed — enabling Test Signing Mode'
-        & bcdedit /set testsigning on | Out-Null
-        Write-Ok 'Test Signing enabled (reboot required)'
-    } else {
-        Write-Ok 'Driver signature valid — Test Signing NOT required'
+    $sysFile = Get-ChildItem -Path $extractPath -Filter '*.sys' -Recurse | Select-Object -First 1
+    if ($sysFile) {
+        $sigResult = Get-AuthenticodeSignature -FilePath $sysFile.FullName
+        if ($sigResult.Status -ne 'Valid') {
+            Write-Info "Driver signature status: $($sigResult.Status) — Enabling Test Signing Mode"
+            & bcdedit /set testsigning on | Out-Null
+            Write-Ok 'Test Signing enabled (reboot required)'
+        } else {
+            Write-Ok 'Driver signature valid — Test Signing NOT required'
+        }
     }
 } catch {
     Write-Err "Certificate setup error: $_"
