@@ -1,15 +1,15 @@
-name: AnyDesk Unattended Workstation 2026
+name: RustDesk Cloud Workstation 2026
 
 on:
   workflow_dispatch:
     inputs:
-      anydesk_password:
-        description: 'Set AnyDesk Password'
+      rustdesk_password:
+        description: 'Set RustDesk Password'
         required: true
         default: 'P@ssword1234!'
 
 jobs:
-  anydesk-deployment:
+  rustdesk-deployment:
     runs-on: windows-latest
     timeout-minutes: 360
 
@@ -39,69 +39,49 @@ jobs:
           Set-ItemProperty -Path $ThemePath -Name 'SystemUsesLightTheme' -Value 0 -Type DWord -Force
 
       # =========================================================================
-      # 2. تثبيت AnyDesk كـ Service وتفعيل Unattended Access القسري
+      # 2. تثبيت RustDesk وتوليد الـ ID المباشر
       # =========================================================================
-      - name: Install & Configure AnyDesk Unattended
+      - name: Install & Launch RustDesk
         shell: powershell
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
 
-          # 2.1 تحميل وتثبيت AnyDesk كخدمة نظام
-          Write-Host "[*] Downloading AnyDesk..." -ForegroundColor Cyan
-          $setupFile = Join-Path $env:TEMP "AnyDesk.exe"
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile $setupFile -UseBasicParsing
+          Write-Host "[*] Downloading RustDesk..." -ForegroundColor Cyan
+          winget install --id RustDesk.RustDesk --silent --accept-source-agreements --accept-package-agreements
 
-          Write-Host "[*] Installing AnyDesk Service..." -ForegroundColor Cyan
-          Start-Process -FilePath $setupFile -ArgumentList "--install `"C:\Program Files (x86)\AnyDesk`" --start-with-win --silent" -Wait
           Start-Sleep -Seconds 5
+          $RustDeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
 
-          $AnyDeskPath = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
-
-          # 2.2 إيقاف الخدمة لتعديل الإعدادات
-          net stop anydesk 2>&1 | Out-Null
-
-          # 2.3 تعديل ملف system.conf بالسماح التلقائي بالاتصال (interactive_access = 2)
-          $confPath = "C:\ProgramData\AnyDesk\system.conf"
-          if (Test-Path $confPath) {
-              Add-Content -Path $confPath -Value "`nad.security.interactive_access=2`n"
-          }
-
-          # 2.4 إعادة تشغيل الخدمة
-          net start anydesk 2>&1 | Out-Null
-          Start-Sleep -Seconds 5
-
-          # 2.5 تعيين كلمة المرور المباشرة
-          $Password = '${{ github.event.inputs.anydesk_password }}'
+          # تعيين كلمة المرور المباشرة
+          $Password = '${{ github.event.inputs.rustdesk_password }}'
           if ([string]::IsNullOrWhiteSpace($Password)) { $Password = 'P@ssword1234!' }
-          cmd.exe /c "echo $Password | `"$AnyDeskPath`" --set-password"
 
-          # 2.6 قراءة ה-ID من الملف
-          $AnyDeskID = ""
+          & "$RustDeskExe" --password "$Password"
+
+          # استخراج ID الخاص بالسيرفر
+          $RustDeskID = ""
           $retry = 0
-          while ([string]::IsNullOrWhiteSpace($AnyDeskID) -and $retry -lt 15) {
+          while ([string]::IsNullOrWhiteSpace($RustDeskID) -and $retry -lt 15) {
               Start-Sleep -Seconds 2
               $retry++
-              if (Test-Path $confPath) {
-                  $content = Get-Content $confPath
-                  if ($content -match 'ad\.anynet\.id\s*=\s*([0-9\s]+)') {
-                      $AnyDeskID = ($matches[1] -replace '\s','').Trim()
-                  }
+              $rawId = & "$RustDeskExe" --get-id
+              if ($rawId -match '\d+') {
+                  $RustDeskID = $matches[0]
               }
           }
 
-          # 2.7 طباعة البيانات
           Write-Host ""
           Write-Host "==========================================" -ForegroundColor Green
-          Write-Host " ANYDESK ID : $AnyDeskID" -ForegroundColor Yellow
-          Write-Host " PASSWORD   : $Password" -ForegroundColor Cyan
+          Write-Host " RUSTDESK ID : $RustDeskID" -ForegroundColor Yellow
+          Write-Host " PASSWORD    : $Password" -ForegroundColor Cyan
           Write-Host "==========================================" -ForegroundColor Green
           Write-Host ""
 
           if ($env:GITHUB_STEP_SUMMARY) {
               $SummaryMarkdown = @"
-          # 🖥️ AnyDesk Ready
+          # 🖥️ RustDesk Cloud Workstation Ready
 
-          * **AnyDesk ID:** ``$AnyDeskID``
+          * **RustDesk ID:** ``$RustDeskID``
           * **Password:** ``$Password``
           "@
               [System.IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, $SummaryMarkdown, [System.Text.Encoding]::UTF8)
